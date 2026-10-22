@@ -32,6 +32,16 @@ pub struct LeetCodeProblem {
     pub date: Option<String>,
     pub topic_tags: Vec<TopicTag>,
     pub code_snippets: Vec<CodeSnippet>,
+    pub example_testcase_list: Vec<String>,
+    pub sample_test_case: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProblemSearchResult {
+    pub question_frontend_id: String,
+    pub title: String,
+    pub title_slug: String,
+    pub difficulty: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +55,25 @@ pub struct SubmissionResult {
     pub runtime_percentile: Option<f64>,
     pub memory_percentile: Option<f64>,
     pub compile_error: Option<String>,
+    pub full_response: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestResult {
+    pub interpret_id: String,
+    pub status_code: Option<i64>,
+    pub status_msg: String,
+    pub run_success: bool,
+    pub correct_answer: Option<bool>,
+    pub total_correct: Option<i64>,
+    pub total_testcases: Option<i64>,
+    pub runtime: Option<String>,
+    pub memory: Option<String>,
+    pub code_answer: Vec<String>,
+    pub expected_code_answer: Vec<String>,
+    pub std_output_list: Vec<String>,
+    pub compile_error: Option<String>,
+    pub runtime_error: Option<String>,
     pub full_response: serde_json::Value,
 }
 
@@ -81,6 +110,8 @@ impl LeetCodeClient {
                         titleSlug
                         difficulty
                         content
+                        exampleTestcaseList
+                        sampleTestCase
                         topicTags {
                             name
                             slug
@@ -138,6 +169,8 @@ impl LeetCodeClient {
                     titleSlug
                     difficulty
                     content
+                    exampleTestcaseList
+                    sampleTestCase
                     topicTags {
                         name
                         slug
@@ -227,6 +260,16 @@ impl LeetCodeClient {
             }
         }
 
+        let mut example_testcase_list = Vec::new();
+        if let Some(cases) = q.get("exampleTestcaseList").and_then(|v| v.as_array()) {
+            for c in cases {
+                if let Some(s) = c.as_str() {
+                    example_testcase_list.push(s.to_string());
+                }
+            }
+        }
+        let sample_test_case = q.get("sampleTestCase").and_then(|v| v.as_str()).map(|s| s.to_string());
+
         Ok(LeetCodeProblem {
             question_id,
             question_frontend_id,
@@ -237,6 +280,8 @@ impl LeetCodeClient {
             date,
             topic_tags,
             code_snippets,
+            example_testcase_list,
+            sample_test_case,
         })
     }
 
@@ -404,4 +449,257 @@ impl LeetCodeClient {
 
         Err(format!("Submission {} timed out during evaluation", submission_id))
     }
+
+    pub async fn search_problems(&self, query: &str) -> Result<Vec<ProblemSearchResult>, String> {
+        let gql_query = r#"
+            query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
+                problemsetQuestionList: questionList(
+                    categorySlug: $categorySlug
+                    limit: $limit
+                    skip: $skip
+                    filters: $filters
+                ) {
+                    total: totalNum
+                    questions: data {
+                        questionFrontendId
+                        title
+                        titleSlug
+                        difficulty
+                    }
+                }
+            }
+        "#;
+
+        let payload = serde_json::json!({
+            "query": gql_query,
+            "variables": {
+                "categorySlug": "",
+                "skip": 0,
+                "limit": 10,
+                "filters": {
+                    "searchKeywords": query
+                }
+            },
+            "operationName": "problemsetQuestionList"
+        });
+
+        let resp = self.client.post(GRAPHQL_URL)
+            .header(CONTENT_TYPE, "application/json")
+            .header(USER_AGENT, USER_AGENT_VAL)
+            .header(REFERER, format!("{}/problemset/all/", LEETCODE_URL))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to search problems: {}", e))?;
+
+        let body: serde_json::Value = resp.json()
+            .await
+            .map_err(|e| format!("Failed to parse search response: {}", e))?;
+
+        let mut results = Vec::new();
+        if let Some(questions) = body.get("data")
+            .and_then(|d| d.get("problemsetQuestionList"))
+            .and_then(|l| l.get("questions"))
+            .and_then(|q| q.as_array())
+        {
+            for q in questions {
+                let question_frontend_id = q.get("questionFrontendId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let title = q.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let title_slug = q.get("titleSlug").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let difficulty = q.get("difficulty").and_then(|v| v.as_str()).unwrap_or("Medium").to_string();
+                if !title_slug.is_empty() {
+                    results.push(ProblemSearchResult {
+                        question_frontend_id,
+                        title,
+                        title_slug,
+                        difficulty,
+                    });
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    pub async fn fetch_problem_by_slug_or_id(&self, identifier: &str) -> Result<LeetCodeProblem, String> {
+        let clean = identifier.trim().trim_start_matches('#').trim();
+        if clean.is_empty() {
+            return Err("Empty problem identifier".to_string());
+        }
+
+        // If numeric (e.g. "1", "42", "3942")
+        if clean.chars().all(|c| c.is_ascii_digit()) {
+            if let Ok(search_res) = self.search_problems(clean).await {
+                if let Some(matched) = search_res.iter().find(|p| p.question_frontend_id == clean) {
+                    return self.fetch_problem_by_slug(&matched.title_slug).await;
+                } else if let Some(first) = search_res.first() {
+                    return self.fetch_problem_by_slug(&first.title_slug).await;
+                }
+            }
+        }
+
+        // Try direct slug first
+        match self.fetch_problem_by_slug(clean).await {
+            Ok(p) => Ok(p),
+            Err(_) => {
+                // Try searching keywords
+                let search_res = self.search_problems(clean).await?;
+                if let Some(first) = search_res.first() {
+                    self.fetch_problem_by_slug(&first.title_slug).await
+                } else {
+                    Err(format!("Problem '{}' not found", identifier))
+                }
+            }
+        }
+    }
+
+    pub async fn run_test_cases(
+        &self,
+        session_token: &str,
+        csrf_token: &str,
+        problem_slug: &str,
+        question_id: &str,
+        lang: &str,
+        code: &str,
+        data_input: Option<&str>,
+    ) -> Result<TestResult, String> {
+        let interpret_url = format!("{}/problems/{}/interpret_solution/", LEETCODE_URL, problem_slug);
+        let cookie_str = format!("LEETCODE_SESSION={}; csrftoken={}", session_token, csrf_token);
+
+        let mut payload_map = serde_json::Map::new();
+        payload_map.insert("lang".to_string(), serde_json::json!(lang));
+        payload_map.insert("question_id".to_string(), serde_json::json!(question_id));
+        payload_map.insert("typed_code".to_string(), serde_json::json!(code));
+        if let Some(input) = data_input {
+            if !input.is_empty() {
+                payload_map.insert("data_input".to_string(), serde_json::json!(input));
+            }
+        }
+
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(COOKIE, HeaderValue::from_str(&cookie_str).map_err(|e| e.to_string())?);
+        headers.insert("x-csrftoken", HeaderValue::from_str(csrf_token).map_err(|e| e.to_string())?);
+        headers.insert(REFERER, HeaderValue::from_str(&format!("{}/problems/{}/", LEETCODE_URL, problem_slug)).map_err(|e| e.to_string())?);
+        headers.insert(ORIGIN, HeaderValue::from_static(LEETCODE_URL));
+        headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VAL));
+
+        let resp = self.client.post(&interpret_url)
+            .headers(headers)
+            .json(&serde_json::Value::Object(payload_map))
+            .send()
+            .await
+            .map_err(|e| format!("Test network error: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let err_text = resp.text().await.unwrap_or_default();
+            return Err(format!("Run code rejected by LeetCode ({}): {}", status, err_text));
+        }
+
+        let json_body: serde_json::Value = resp.json()
+            .await
+            .map_err(|e| format!("Failed to parse test execution response: {}", e))?;
+
+        let interpret_id = json_body.get("interpret_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                let err_msg = json_body.get("error").and_then(|v| v.as_str()).unwrap_or("No interpret_id returned");
+                format!("Failed to retrieve interpret_id: {}", err_msg)
+            })?
+            .to_string();
+
+        println!("🧪 Test initiated! Interpret ID: {}, checking result...", interpret_id);
+
+        let check_url = format!("{}/submissions/detail/{}/check/", LEETCODE_URL, interpret_id);
+
+        for attempt in 1..=12 {
+            sleep(Duration::from_millis(1500)).await;
+
+            let check_resp = self.client.get(&check_url)
+                .header(COOKIE, &cookie_str)
+                .header(USER_AGENT, USER_AGENT_VAL)
+                .header(REFERER, format!("{}/problems/{}/", LEETCODE_URL, problem_slug))
+                .send()
+                .await;
+
+            if let Ok(resp) = check_resp {
+                if let Ok(res_json) = resp.json::<serde_json::Value>().await {
+                    let state = res_json.get("state").and_then(|v| v.as_str()).unwrap_or("");
+                    if state == "SUCCESS" {
+                        let status_code = res_json.get("status_code").and_then(|v| v.as_i64());
+                        let status_msg = res_json.get("status_msg")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown")
+                            .to_string();
+                        let run_success = res_json.get("run_success").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let correct_answer = res_json.get("correct_answer").and_then(|v| v.as_bool());
+                        let total_correct = res_json.get("total_correct").and_then(|v| v.as_i64());
+                        let total_testcases = res_json.get("total_testcases").and_then(|v| v.as_i64());
+                        let runtime = res_json.get("status_runtime").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let memory = res_json.get("status_memory").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                        let mut code_answer = Vec::new();
+                        if let Some(arr) = res_json.get("code_answer").and_then(|v| v.as_array()) {
+                            for a in arr {
+                                if let Some(s) = a.as_str() {
+                                    if !s.is_empty() { code_answer.push(s.to_string()); }
+                                }
+                            }
+                        }
+
+                        let mut expected_code_answer = Vec::new();
+                        if let Some(arr) = res_json.get("expected_code_answer").and_then(|v| v.as_array()) {
+                            for a in arr {
+                                if let Some(s) = a.as_str() {
+                                    if !s.is_empty() { expected_code_answer.push(s.to_string()); }
+                                }
+                            }
+                        }
+
+                        let mut std_output_list = Vec::new();
+                        if let Some(arr) = res_json.get("std_output_list").and_then(|v| v.as_array()) {
+                            for a in arr {
+                                if let Some(s) = a.as_str() {
+                                    if !s.is_empty() { std_output_list.push(s.to_string()); }
+                                }
+                            }
+                        }
+
+                        let compile_error = res_json.get("full_compile_error")
+                            .or_else(|| res_json.get("compile_error"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let runtime_error = res_json.get("runtime_error")
+                            .or_else(|| res_json.get("full_runtime_error"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+
+                        return Ok(TestResult {
+                            interpret_id,
+                            status_code,
+                            status_msg,
+                            run_success,
+                            correct_answer,
+                            total_correct,
+                            total_testcases,
+                            runtime,
+                            memory,
+                            code_answer,
+                            expected_code_answer,
+                            std_output_list,
+                            compile_error,
+                            runtime_error,
+                            full_response: res_json,
+                        });
+                    }
+                }
+            }
+
+            println!("⏳ Waiting for test evaluation... attempt {}/12", attempt);
+        }
+
+        Err(format!("Test execution {} timed out during evaluation", interpret_id))
+    }
 }
+

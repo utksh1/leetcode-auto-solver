@@ -27,6 +27,22 @@ pub struct SolveRequest {
     pub title_slug: Option<String>,
     pub lang: Option<String>,
     pub language: Option<String>,
+    pub code: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct TestRequest {
+    pub slug: Option<String>,
+    pub title_slug: Option<String>,
+    pub lang: Option<String>,
+    pub language: Option<String>,
+    pub code: Option<String>,
+    pub data_input: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    pub q: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -110,11 +126,27 @@ pub async fn get_daily_handler(State(state): State<AppState>) -> impl IntoRespon
     }
 }
 
+pub async fn search_problems_handler(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> impl IntoResponse {
+    let q = query.q.unwrap_or_default();
+    let trimmed = q.trim();
+    if trimmed.is_empty() {
+        return (StatusCode::OK, Json(serde_json::json!([]))).into_response();
+    }
+
+    match state.leetcode.search_problems(trimmed).await {
+        Ok(results) => (StatusCode::OK, Json(results)).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({ "error": e }))).into_response(),
+    }
+}
+
 pub async fn get_problem_handler(
     State(state): State<AppState>,
     AxumPath(slug): AxumPath<String>,
 ) -> impl IntoResponse {
-    match state.leetcode.fetch_problem_by_slug(&slug).await {
+    match state.leetcode.fetch_problem_by_slug_or_id(&slug).await {
         Ok(problem) => {
             let tags: Vec<String> = problem.topic_tags.iter().map(|t| t.name.clone()).collect();
             (StatusCode::OK, Json(serde_json::json!({
@@ -128,6 +160,8 @@ pub async fn get_problem_handler(
                 "content": problem.content,
                 "question_content": problem.content,
                 "topic_tags": tags,
+                "example_testcase_list": problem.example_testcase_list,
+                "sample_test_case": problem.sample_test_case,
             }))).into_response()
         },
         Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response(),
@@ -143,10 +177,10 @@ pub async fn preview_solution_handler(
     let lang = query.lang.unwrap_or_else(|| cfg.preferred_lang.clone());
 
     // Fetch problem info to get frontend ID and Title
-    let problem = match state.leetcode.fetch_problem_by_slug(&slug).await {
+    let problem = match state.leetcode.fetch_problem_by_slug_or_id(&slug).await {
         Ok(p) => p,
         Err(_) => match state.leetcode.fetch_daily_problem().await {
-            Ok(p) if p.title_slug == slug => p,
+            Ok(p) if p.title_slug == slug || p.question_frontend_id == slug => p,
             _ => {
                 return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": format!("Could not find problem '{}'", slug) }))).into_response();
             }
@@ -162,9 +196,102 @@ pub async fn preview_solution_handler(
             "difficulty": problem.difficulty,
             "language": solution.language,
             "code": solution.code,
-            "source": solution.source
+            "source": solution.source,
+            "example_testcase_list": problem.example_testcase_list,
+            "sample_test_case": problem.sample_test_case,
         }))).into_response(),
         Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response(),
+    }
+}
+
+pub async fn test_solution_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<TestRequest>,
+) -> impl IntoResponse {
+    let cfg = state.config.read().await.clone();
+    let lang = payload.lang.or(payload.language).unwrap_or(cfg.preferred_lang.clone());
+    let requested_slug = payload.slug.or(payload.title_slug);
+
+    let problem = match if let Some(ref slug) = requested_slug {
+        state.leetcode.fetch_problem_by_slug_or_id(slug).await
+    } else {
+        state.leetcode.fetch_daily_problem().await
+    } {
+        Ok(p) => p,
+        Err(e) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response(),
+    };
+
+    let (code, language) = if let Some(ref c) = payload.code {
+        if !c.trim().is_empty() {
+            (c.clone(), lang)
+        } else {
+            match state.solution_fetcher.fetch_solution(
+                &problem.question_frontend_id,
+                &problem.title,
+                &problem.title_slug,
+                &lang,
+            ).await {
+                Ok(s) => (s.code, s.language),
+                Err(e) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response(),
+            }
+        }
+    } else {
+        match state.solution_fetcher.fetch_solution(
+            &problem.question_frontend_id,
+            &problem.title,
+            &problem.title_slug,
+            &lang,
+        ).await {
+            Ok(s) => (s.code, s.language),
+            Err(e) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response(),
+        }
+    };
+
+    let (session, csrf) = match (&cfg.leetcode_session, &cfg.csrf_token) {
+        (Some(s), Some(c)) if !s.is_empty() && !c.is_empty() => (s.clone(), c.clone()),
+        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error": "LeetCode session and CSRF token required to run testcases. Configure in Settings."
+        }))).into_response(),
+    };
+
+    let custom_input = payload.data_input.as_deref().filter(|s| !s.trim().is_empty());
+    let data_input = custom_input.or_else(|| {
+        if !problem.example_testcase_list.is_empty() {
+            None
+        } else {
+            problem.sample_test_case.as_deref()
+        }
+    });
+
+    match state.leetcode.run_test_cases(
+        &session,
+        &csrf,
+        &problem.title_slug,
+        &problem.question_id,
+        &language,
+        &code,
+        data_input,
+    ).await {
+        Ok(res) => (StatusCode::OK, Json(serde_json::json!({
+            "success": res.run_success && res.correct_answer.unwrap_or(false),
+            "status": res.status_msg,
+            "status_msg": res.status_msg,
+            "run_success": res.run_success,
+            "correct_answer": res.correct_answer,
+            "total_correct": res.total_correct,
+            "total_testcases": res.total_testcases,
+            "runtime": res.runtime,
+            "memory": res.memory,
+            "code_answer": res.code_answer,
+            "expected_code_answer": res.expected_code_answer,
+            "std_output_list": res.std_output_list,
+            "compile_error": res.compile_error,
+            "runtime_error": res.runtime_error,
+            "problem_id": problem.question_frontend_id,
+            "problem_title": problem.title,
+            "language": language,
+        }))).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({ "error": e }))).into_response(),
     }
 }
 
@@ -181,7 +308,7 @@ pub async fn solve_handler(
 
     // 1. Fetch problem
     let problem_res = if let Some(ref slug) = requested_slug {
-        state.leetcode.fetch_problem_by_slug(slug).await
+        state.leetcode.fetch_problem_by_slug_or_id(slug).await
     } else {
         state.leetcode.fetch_daily_problem().await
     };
@@ -210,33 +337,68 @@ pub async fn solve_handler(
         }
     };
 
-    // 2. Fetch solution from GitHub or local
-    let solution = match state.solution_fetcher.fetch_solution(
-        &problem.question_frontend_id,
-        &problem.title,
-        &problem.title_slug,
-        &lang,
-    ).await {
-        Ok(s) => s,
-        Err(e) => {
-            let exec_ms = start_time.elapsed().as_millis() as i64;
-            let _ = state.db.save_submission(&SubmissionRecord {
-                id: None,
-                date: today_date,
-                problem_id: Some(problem.question_frontend_id.clone()),
-                problem_title: Some(problem.title.clone()),
-                difficulty: Some(problem.difficulty.clone()),
-                status: "Failed".to_string(),
-                submission_id: None,
-                runtime: None,
-                memory: None,
-                execution_time: exec_ms,
-                language: Some(lang),
-                code: None,
-                error: Some(e.clone()),
-                created_at: None,
-            });
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response();
+    // 2. Fetch or use provided solution
+    let (code_to_submit, lang_to_submit) = if let Some(ref c) = payload.code {
+        if !c.trim().is_empty() {
+            (c.clone(), lang.clone())
+        } else {
+            match state.solution_fetcher.fetch_solution(
+                &problem.question_frontend_id,
+                &problem.title,
+                &problem.title_slug,
+                &lang,
+            ).await {
+                Ok(s) => (s.code, s.language),
+                Err(e) => {
+                    let exec_ms = start_time.elapsed().as_millis() as i64;
+                    let _ = state.db.save_submission(&SubmissionRecord {
+                        id: None,
+                        date: today_date,
+                        problem_id: Some(problem.question_frontend_id.clone()),
+                        problem_title: Some(problem.title.clone()),
+                        difficulty: Some(problem.difficulty.clone()),
+                        status: "Failed".to_string(),
+                        submission_id: None,
+                        runtime: None,
+                        memory: None,
+                        execution_time: exec_ms,
+                        language: Some(lang),
+                        code: None,
+                        error: Some(e.clone()),
+                        created_at: None,
+                    });
+                    return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response();
+                }
+            }
+        }
+    } else {
+        match state.solution_fetcher.fetch_solution(
+            &problem.question_frontend_id,
+            &problem.title,
+            &problem.title_slug,
+            &lang,
+        ).await {
+            Ok(s) => (s.code, s.language),
+            Err(e) => {
+                let exec_ms = start_time.elapsed().as_millis() as i64;
+                let _ = state.db.save_submission(&SubmissionRecord {
+                    id: None,
+                    date: today_date,
+                    problem_id: Some(problem.question_frontend_id.clone()),
+                    problem_title: Some(problem.title.clone()),
+                    difficulty: Some(problem.difficulty.clone()),
+                    status: "Failed".to_string(),
+                    submission_id: None,
+                    runtime: None,
+                    memory: None,
+                    execution_time: exec_ms,
+                    language: Some(lang),
+                    code: None,
+                    error: Some(e.clone()),
+                    created_at: None,
+                });
+                return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response();
+            }
         }
     };
 
@@ -248,8 +410,8 @@ pub async fn solve_handler(
                 csrf,
                 &problem.title_slug,
                 &problem.question_id,
-                &solution.language,
-                &solution.code,
+                &lang_to_submit,
+                &code_to_submit,
             ).await {
                 Ok(res) => (res.status, Some(res.submission_id), res.runtime, res.memory, res.compile_error),
                 Err(e) => ("Submission Error".to_string(), None, None, None, Some(e)),
@@ -273,8 +435,8 @@ pub async fn solve_handler(
         runtime: runtime.clone(),
         memory: memory.clone(),
         execution_time: exec_ms,
-        language: Some(solution.language.clone()),
-        code: Some(solution.code.clone()),
+        language: Some(lang_to_submit.clone()),
+        code: Some(code_to_submit.clone()),
         error: submission_error.clone(),
         created_at: None,
     };
@@ -289,8 +451,8 @@ pub async fn solve_handler(
         problem_title: problem.title,
         difficulty: problem.difficulty,
         status,
-        language: solution.language,
-        code: solution.code,
+        language: lang_to_submit,
+        code: code_to_submit,
         runtime,
         memory,
         execution_time_ms: exec_ms,
