@@ -163,10 +163,10 @@ impl AppConfig {
             "expiresAt": chrono::Utc::now().timestamp_millis() + (30 * 24 * 60 * 60 * 1000)
         });
 
-        fs::write("session.json", serde_json::to_string_pretty(&session_data).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+        write_private("session.json", &serde_json::to_string_pretty(&session_data).map_err(|e| e.to_string())?)?;
 
-        // Also update .env file cleanly
+        // Also update .env file cleanly — same restrictive permissions, since it
+        // contains the raw session cookie and CSRF token.
         let env_content = format!(
             "PORT={}\nLEETCODE_SESSION=\"{}\"\nLEETCODE_CSRF_TOKEN=\"{}\"\nPREFERRED_LANG=\"{}\"\n",
             self.port,
@@ -174,8 +174,24 @@ impl AppConfig {
             csrf_token,
             self.preferred_lang
         );
-        let _ = fs::write(".env", env_content);
+        let _ = write_private(".env", &env_content);
 
         Ok(())
     }
+}
+
+/// Write a file that contains credentials with owner-only permissions (0600).
+/// Without this, session.json / .env are created world-readable (0644), which
+/// leaks the LeetCode session cookie to every other user on the host.
+fn write_private(path: &str, content: &str) -> Result<(), String> {
+    fs::write(path, content).map_err(|e| e.to_string())?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("wrote {} but could not restrict permissions: {}", path, e))?;
+    }
+
+    Ok(())
 }

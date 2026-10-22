@@ -212,7 +212,7 @@ export default function SettingsPage() {
     ? Math.max(0, Math.floor((Date.now() - fetchedAtRef.current) / 1000))
     : 0;
   const memPct = specs ? Math.min(100, (specs.memory_rss_mb / specs.memory_budget_mb) * 100) : 0;
-  const memTone = memPct >= 90 ? 'danger' : memPct >= 65 ? 'warn' : 'ok';
+  const memTone = memPct >= 80 ? 'danger' : memPct >= 50 ? 'warn' : 'ok';
   const uptimeLive = specs ? specs.uptime_secs + elapsedSinceFetch : 0;
   const cronIn = specs ? Math.max(0, specs.cron_next_run_in_secs - elapsedSinceFetch) : 0;
 
@@ -227,9 +227,9 @@ export default function SettingsPage() {
       icon: MemoryStick,
       label: 'Memory Footprint',
       value: specs
-        ? `${specs.memory_rss_mb.toFixed(1)} MB / 15 MB · Free Tier Safe`
+        ? `${specs.memory_rss_mb.toFixed(1)} MB / 512 MB · app target < 15 MB`
         : '…',
-      tone: memPct >= 90 ? 'var(--danger-text)' : memPct >= 65 ? 'var(--warning-text)' : 'var(--success-text)',
+      tone: memPct >= 80 ? 'var(--danger-text)' : memPct >= 50 ? 'var(--warning-text)' : 'var(--success-text)',
     },
     {
       icon: CalendarClock,
@@ -530,14 +530,14 @@ export default function SettingsPage() {
                   <div
                     className="sys-bar"
                     role="progressbar"
-                    aria-label="Memory usage against 15 MB free-tier budget"
+                    aria-label="Memory usage against 512 MB Render free tier budget"
                     aria-valuemin={0}
-                    aria-valuemax={15}
+                    aria-valuemax={512}
                     aria-valuenow={specs ? specs.memory_rss_mb : 0}
                   >
                     <div className={`sys-bar-fill ${memTone}`} style={{ width: `${memPct}%` }} />
                   </div>
-                  <span className="sys-tile-sub">15 MB free-tier budget</span>
+                  <span className="sys-tile-sub">512 MB Render free tier</span>
                 </div>
 
                 <div className="sys-tile">

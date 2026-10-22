@@ -15,7 +15,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
-use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
 use crate::config::AppConfig;
@@ -231,8 +230,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/icons.svg", get(static_root_file_handler))
         .nest_service("/assets", ServeDir::new("public/assets"))
         .fallback(spa_fallback)
-        .layer(CorsLayer::permissive())
         .layer(axum::middleware::from_fn(count_requests))
+        .layer(axum::middleware::from_fn(no_store_api))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -253,6 +252,29 @@ async fn count_requests(
 ) -> axum::response::Response {
     system::bump_requests();
     next.run(req).await
+}
+
+/// Mark every API/health response as uncacheable. /api/history returns full
+/// submitted source code and /api/session/status returns the account name —
+/// those must never land in browser caches, proxies, or back/forward caches.
+/// 
+/// Note: the previous `CorsLayer::permissive()` was deliberately removed.
+/// The SPA is served same-origin (and the Vite dev server proxies /api), so
+/// CORS is never needed — while a permissive policy would let any website
+/// read this API (including submission history) from a visitor's browser.
+async fn no_store_api(
+    req: axum::extract::Request,
+    next: Next,
+) -> axum::response::Response {
+    let path = req.uri().path().to_owned();
+    let mut res = next.run(req).await;
+    if path.starts_with("/api") || path.starts_with("/health") {
+        res.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+    }
+    res
 }
 
 async fn spa_fallback() -> (axum::http::StatusCode, axum::response::Html<String>) {

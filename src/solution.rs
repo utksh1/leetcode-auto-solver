@@ -1,6 +1,11 @@
 use regex::Regex;
 use std::time::Duration;
 
+/// Hard cap for any fetched solution file. raw.githubusercontent.com files in
+/// these repos are a few KB — anything larger is rejected instead of being
+/// pulled fully into memory (defence against bloated/malicious responses).
+const MAX_SOLUTION_BYTES: usize = 512 * 1024;
+
 pub struct SolutionFetcher {
     client: reqwest::Client,
 }
@@ -19,6 +24,16 @@ impl SolutionFetcher {
             .build()
             .unwrap_or_default();
         Self { client }
+    }
+
+    /// Read a response body with a size cap. Returns None when the body
+    /// exceeds MAX_SOLUTION_BYTES.
+    async fn read_capped(&self, resp: reqwest::Response) -> Option<String> {
+        let bytes = resp.bytes().await.ok()?;
+        if bytes.len() > MAX_SOLUTION_BYTES {
+            return None;
+        }
+        String::from_utf8(bytes.to_vec()).ok()
     }
 
     pub fn get_range(frontend_id_str: &str) -> String {
@@ -108,7 +123,7 @@ impl SolutionFetcher {
 
                 if let Ok(resp) = self.client.get(&url).send().await {
                     if resp.status().is_success() {
-                        if let Ok(markdown) = resp.text().await {
+                        if let Some(markdown) = self.read_capped(resp).await {
                             if let Some(code) = Self::extract_code_from_markdown(&markdown, target_lang) {
                                 return Some(FetchedSolution {
                                     language: target_lang.to_string(),
@@ -149,7 +164,7 @@ impl SolutionFetcher {
         for url in &urls {
             if let Ok(resp) = self.client.get(url).send().await {
                 if resp.status().is_success() {
-                    if let Ok(raw_code) = resp.text().await {
+                    if let Some(raw_code) = self.read_capped(resp).await {
                         let cleaned = Self::clean_code(&raw_code, target_lang);
                         if !cleaned.is_empty() {
                             return Some(FetchedSolution {

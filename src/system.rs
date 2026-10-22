@@ -147,7 +147,10 @@ pub fn snapshot(db: &Database) -> serde_json::Value {
         "pid": std::process::id(),
         // Live process metrics
         "memory_rss_mb": rss_mb,
-        "memory_budget_mb": 15.0,
+        "memory_budget_mb": 512.0,
+        "memory_budget_label": "Render Free Tier (512 MB)",
+        "memory_target_mb": 15.0,
+        "memory_target_label": "app target < 15 MB",
         "cpu_percent": cpu_percent(),
         "uptime_secs": uptime_secs(),
         "requests_served": REQUESTS.load(Ordering::Relaxed),
