@@ -1,0 +1,12 @@
+{
+  "name": "leetcode-auto-solver",
+  "version": "1.0.0",
+  "description": "Autonomous LeetCode solver with native Rust engine and React SPA frontend",
+  "scripts": {
+    "build": "npm --prefix frontend run build && cargo build --release",
+    "build:frontend": "npm --prefix frontend run build",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "start": "./start.sh",
+    "solve": "./solve.sh"
+  }
+}

@@ -1,0 +1,63 @@
+name: LeetCode Daily Autonomous Solver & Solution Sync
+
+on:
+  schedule:
+    # Runs at 10:00 UTC (15:30 IST / 02:00 PST) every day
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      problem_slug:
+        description: 'Specific problem slug to solve (leave empty for daily challenge)'
+        required: false
+        default: ''
+      language:
+        description: 'Programming language (typescript, python3, rust, golang, java, cpp)'
+        required: false
+        default: 'typescript'
+
+jobs:
+  solve-and-sync:
+    name: Run Solver & Sync Solutions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build Solver Binary
+        run: cargo build --release
+
+      - name: Run LeetCode Auto-Solver
+        env:
+          LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
+          LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
+          PORT: 3000
+        run: |
+          if [ -n "${{ github.event.inputs.problem_slug }}" ]; then
+            echo "Solving custom problem: ${{ github.event.inputs.problem_slug }} (${{ github.event.inputs.language }})"
+            ./target/release/leetcode-auto-solver solve "${{ github.event.inputs.problem_slug }}" "${{ github.event.inputs.language }}"
+          else
+            echo "Solving Daily LeetCode Challenge..."
+            ./target/release/leetcode-auto-solver solve
+          fi
+
+      - name: Commit Updated Database & Logs
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.db || true
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore(auto): record daily leetcode submission [skip ci]" && git push)

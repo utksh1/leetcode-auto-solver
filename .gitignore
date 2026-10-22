@@ -1,0 +1,12 @@
+node_modules/
+frontend/node_modules/
+dist/
+target/
+*.log
+.DS_Store
+.env
+.env.json
+data.db
+data.db-wal
+data.db-shm
+session.json

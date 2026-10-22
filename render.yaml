@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: leetcode-auto-solver
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: LEETCODE_SESSION
+        sync: false
+      - key: LEETCODE_CSRF_TOKEN
+        sync: false

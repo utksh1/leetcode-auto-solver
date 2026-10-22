@@ -1,0 +1,19 @@
+[package]
+name = "leetcode-auto-solver"
+version = "1.0.0"
+edition = "2021"
+description = "High-performance automated LeetCode solver with scheduling and dashboard"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tokio-cron-scheduler = "0.10"
+reqwest = { version = "0.12", features = ["json", "cookies"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+regex = "1.10"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
