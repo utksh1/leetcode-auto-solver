@@ -3222,3 +3222,122 @@ code {
     height: 340px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DAILY CHALLENGE — LeetCode workspace variant
+   Reuses the solver workspace (root carries .solver-page); adds the daily
+   toolbar, accent banner, and countdown chip below.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.daily-toolbar {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.daily-toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.daily-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-2);
+  border-radius: var(--radius-full);
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
+.daily-date {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.daily-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.daily-countdown svg {
+  color: var(--text-faint);
+}
+
+/* Accent banner pinned above the problem title in the description header */
+.lc-daily-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-2);
+  border-radius: var(--radius-full);
+  padding: 4px 11px;
+  margin-bottom: 10px;
+}
+
+.lc-daily-banner-date {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Empty editor state (no archived solution for this language) */
+.lc-editor-empty {
+  height: 100%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 24px;
+}
+
+.lc-editor-empty p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .daily-date {
+    display: none;
+  }
+
+  .daily-countdown {
+    font-size: 11px;
+    padding: 5px 9px;
+  }
+
+  .daily-chip {
+    font-size: 11.5px;
+    padding: 6px 10px;
+  }
+}
