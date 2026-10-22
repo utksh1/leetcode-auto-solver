@@ -2291,17 +2291,38 @@ code {
   border: 0;
 }
 
-/* ── Toolbar ───────────────────────────────────────────────────────────── */
-/* Solver page: slim bottom padding so the workspace can fill the viewport */
+/* ═══════════════════════════════════════════════════════════════════════════
+   PROBLEM SOLVER — authentic LeetCode workspace
+   Full-viewport split: description pane (tabs + scroll) | draggable divider |
+   code pane (toolbar w/ Run+Submit, editor, collapsible console).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Page shell: full-bleed, footer hidden, workspace fills the viewport */
 .main-content:has(.solver-page) {
-  padding-bottom: 20px;
+  max-width: none;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
+.app-body:has(.solver-page) .app-footer {
+  display: none;
+}
+
+.solver-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ── Toolbar ───────────────────────────────────────────────────────────── */
 .solver-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: var(--space-3);
+  margin-bottom: 10px;
+  flex-shrink: 0;
 }
 
 .solver-toolbar-search {
@@ -2320,21 +2341,22 @@ code {
 }
 
 .solver-toolbar-search .solver-search-input {
-  height: 38px;
+  height: 36px;
   padding-left: 34px;
   background: var(--surface);
-  font-size: 13.5px;
+  font-size: 13px;
 }
 
 .solver-toolbar .solver-load-btn {
   flex-shrink: 0;
-  height: 38px;
+  height: 36px;
 }
 
-/* ── Split shell ───────────────────────────────────────────────────────── */
-.lc-split {
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+/* ── Workspace shell ───────────────────────────────────────────────────── */
+.lc-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
@@ -2348,21 +2370,18 @@ code {
   min-height: 0;
 }
 
-.lc-pane--desc {
-  border-right: 1px solid var(--border);
-}
-
-.lc-split-empty {
-  grid-template-columns: 1fr;
-}
-
 /* ── Left pane: description ────────────────────────────────────────────── */
+.lc-pane--desc {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 280px;
+}
+
 .lc-desc-head {
-  position: sticky;
-  top: 0;
-  z-index: 3;
+  flex-shrink: 0;
   background: var(--surface);
-  padding: 16px 20px 12px;
+  padding: 16px 20px 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -2402,8 +2421,54 @@ code {
   color: var(--accent-strong);
 }
 
+/* Tab strip: Description | Editorial | Solutions | Submissions */
+.lc-desc-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lc-desc-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.lc-desc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 transparent;
+  transition: color var(--speed) var(--ease), box-shadow var(--speed) var(--ease);
+}
+
+.lc-desc-tab:hover {
+  color: var(--text-secondary);
+}
+
+.lc-desc-tab.active {
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 var(--text-primary);
+}
+
+/* Scrollable description body */
+.lc-desc-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px 12px;
+}
+
 .lc-desc-body {
-  padding: 14px 20px 10px;
   overflow-wrap: break-word;
 }
 
@@ -2417,25 +2482,17 @@ code {
 }
 
 .lc-desc-placeholder {
-  padding: 56px 24px;
-  text-align: center;
+  padding: 32px 20px;
   color: var(--text-muted);
   font-size: 13px;
 }
 
+/* Pinned related-topics footer */
 .lc-desc-topics {
-  padding: 14px 20px 20px;
+  flex-shrink: 0;
   border-top: 1px solid var(--border);
-}
-
-.lc-topics-label {
-  display: block;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: 8px;
+  padding: 11px 20px;
+  background: var(--surface);
 }
 
 .lc-tag-row {
@@ -2445,17 +2502,187 @@ code {
 }
 
 .lc-tag-chip {
-  font-size: 11.5px;
-  line-height: 1;
-  padding: 5px 10px;
-  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  color: var(--text-secondary);
+  border-radius: var(--radius-full);
+  padding: 4px 10px;
+  transition: color var(--speed) var(--ease), border-color var(--speed) var(--ease),
+    background var(--speed) var(--ease);
 }
 
-/* ── Right pane: editor ────────────────────────────────────────────────── */
+.lc-tag-chip:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent-soft-2);
+  background: var(--accent-soft);
+}
+
+/* Editorial / Solutions / empty Submissions placeholders */
+.lc-tab-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 48px 24px;
+}
+
+.lc-tab-empty-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.lc-tab-empty h3 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lc-tab-empty p {
+  margin: 0;
+  max-width: 380px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.lc-tab-empty .btn {
+  margin-top: 8px;
+}
+
+/* Submissions tab — history rows */
+.lc-subs-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.lc-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lc-sub-row:last-child {
+  border-bottom: none;
+}
+
+.lc-sub-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lc-sub-dot.pass { background: var(--success); }
+.lc-sub-dot.fail { background: var(--danger); }
+
+.lc-sub-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lc-sub-status {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lc-sub-status.pass { color: var(--success-text); }
+.lc-sub-status.fail { color: var(--danger-text); }
+
+.lc-sub-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lc-sub-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.lc-sub-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.lc-sub-view {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color var(--speed) var(--ease), border-color var(--speed) var(--ease);
+}
+
+.lc-sub-view:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/* ── Draggable divider ─────────────────────────────────────────────────── */
+.lc-resizer {
+  flex: none;
+  width: 7px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  touch-action: none;
+}
+
+.lc-resizer::before {
+  /* generous invisible hit area */
+  content: '';
+  position: absolute;
+  inset: 0 -4px;
+}
+
+.lc-resizer-grip {
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  transition: background var(--speed) var(--ease), height var(--speed) var(--ease);
+}
+
+.lc-resizer:hover .lc-resizer-grip,
+.lc-resizer:active .lc-resizer-grip {
+  background: var(--accent);
+  height: 60px;
+}
+
+/* ── Right pane: code workspace ────────────────────────────────────────── */
 .lc-pane--code {
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
 }
@@ -2465,7 +2692,7 @@ code {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -2547,9 +2774,59 @@ code {
   cursor: not-allowed;
 }
 
+/* LeetCode-style Run | Submit button group */
+.lc-run-group {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  margin-left: 8px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.lc-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 13px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--speed) var(--ease), background var(--speed) var(--ease);
+}
+
+.lc-run-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-3);
+}
+
+.lc-run-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lc-run-divider {
+  width: 1px;
+  background: var(--border-strong);
+  flex-shrink: 0;
+}
+
+.lc-run-btn--submit:hover:not(:disabled) {
+  color: var(--success-text);
+  background: var(--success-soft);
+}
+
 .lc-editor-wrap {
   background: var(--bg-inset);
-  min-height: 300px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .lc-editor-wrap.editing {
@@ -2567,16 +2844,19 @@ code {
 
 .lc-editor-wrap .code-editor-textarea {
   height: 100%;
-  min-height: 300px;
+  min-height: 220px;
   resize: none;
   font-size: 12.75px;
 }
 
-/* ── Right pane: console (Testcase / Result) ───────────────────────────── */
+/* ── Console (Testcase / Result) — collapsible ─────────────────────────── */
 .lc-console {
   border-top: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
+  max-height: 46%;
+  display: flex;
+  flex-direction: column;
 }
 
 .lc-console-bar {
@@ -2584,9 +2864,13 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 0 12px;
+  padding: 0 8px 0 12px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.lc-console.collapsed .lc-console-bar {
+  border-bottom: none;
 }
 
 .lc-console-tabs {
@@ -2598,7 +2882,7 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 10px;
+  padding: 9px 10px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -2623,37 +2907,20 @@ code {
   color: var(--accent-strong);
 }
 
-.lc-console-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 0;
-}
-
-/* LeetCode-green submit */
-.btn-submit {
-  background: var(--success);
-  color: #ffffff;
-  font-weight: 600;
-}
-
-.btn-submit:hover:not(:disabled) {
-  background: #0da271;
-}
-
-.btn-submit:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.lc-console-toggle {
+  width: 28px;
+  height: 28px;
 }
 
 .lc-console-body {
-  padding: 14px 16px 16px;
+  padding: 12px 16px 14px;
+  overflow-y: auto;
 }
 
 .lc-testcase-input {
   display: block;
   width: 100%;
-  min-height: 96px;
+  min-height: 92px;
   background: var(--bg-inset);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -2811,15 +3078,19 @@ code {
 }
 
 /* ── Empty state ───────────────────────────────────────────────────────── */
+.lc-workspace-empty {
+  animation: pageIn 240ms var(--ease) both;
+}
+
 .lc-empty {
-  grid-column: 1 / -1;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
   gap: 10px;
-  padding: 72px 24px;
+  padding: 56px 24px;
 }
 
 .lc-empty-icon {
@@ -2863,41 +3134,57 @@ code {
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
 @media (min-width: 1024px) {
-  /* Fill the viewport down to the footer — no dead band below the workspace */
-  .lc-split {
-    height: clamp(520px, calc(100vh - 160px), 1180px);
-  }
-
-  /* Empty state stretches too — content centers vertically */
-  .lc-split-empty {
-    min-height: 520px;
-  }
-
-  .lc-pane--desc {
-    overflow-y: auto;
-  }
-
-  .lc-pane--code .lc-editor-wrap {
-    flex: 1 1 0;
-    min-height: 140px;
-    overflow: auto;
-  }
-
-  /* Console scales with the workspace instead of a fixed cap */
-  .lc-console-body {
-    max-height: 40%;
-    overflow-y: auto;
+  /* Lock the shell to the viewport so the workspace can't stretch the page.
+     flex: none so the explicit height wins over the base flex: 1 1 0%. */
+  .main-content:has(.solver-page) {
+    flex: none;
+    height: 100vh;
+    overflow: hidden;
   }
 }
 
 @media (max-width: 1023px) {
-  .lc-split {
-    grid-template-columns: 1fr;
+  /* Mobile: natural document flow — stacked panes scroll with the page */
+  .main-content:has(.solver-page) {
+    flex: none;
+    height: auto;
+    overflow: visible;
+  }
+
+  .solver-page {
+    min-height: calc(100vh - var(--topbar-h) - 24px);
+  }
+
+  .lc-workspace {
+    flex-direction: column;
+  }
+
+  /* Auto-height column flex: basis 0 would collapse the code pane */
+  .lc-pane--code {
+    flex: none;
   }
 
   .lc-pane--desc {
-    border-right: none;
+    width: 100% !important;
+    min-width: 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  .lc-desc-scroll {
+    overflow-y: visible;
+  }
+
+  .lc-resizer {
+    display: none;
+  }
+
+  .lc-editor-wrap {
+    flex: none;
+    height: 400px;
+  }
+
+  .lc-console {
+    max-height: none;
   }
 
   .lc-console-body {
@@ -2907,6 +3194,14 @@ code {
 }
 
 @media (max-width: 640px) {
+  .main-content:has(.solver-page) {
+    padding: 10px;
+  }
+
+  .solver-page {
+    min-height: calc(100vh - var(--topbar-h) - 20px);
+  }
+
   .solver-toolbar {
     flex-wrap: nowrap;
   }
@@ -2915,7 +3210,15 @@ code {
     padding: 0 12px;
   }
 
-  .lc-console-actions .btn {
-    padding: 0 11px;
+  .lc-editorbar {
+    gap: 8px;
+  }
+
+  .lc-run-btn {
+    padding: 0 10px;
+  }
+
+  .lc-editor-wrap {
+    height: 340px;
   }
 }

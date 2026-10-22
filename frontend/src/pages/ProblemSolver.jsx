@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Search,
   Play,
@@ -11,9 +11,24 @@ import {
   ExternalLink,
   Code2,
   ChevronRight,
+  BookOpen,
+  Newspaper,
+  MessagesSquare,
+  History as HistoryIcon,
+  Send,
+  ChevronDown,
+  Clock,
+  TerminalSquare,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import CodeBlock from '../components/CodeBlock';
+
+const DESC_TABS = [
+  { id: 'description', label: 'Description', icon: BookOpen },
+  { id: 'editorial', label: 'Editorial', icon: Newspaper },
+  { id: 'solutions', label: 'Solutions', icon: MessagesSquare },
+  { id: 'submissions', label: 'Submissions', icon: HistoryIcon },
+];
 
 export default function ProblemSolver() {
   const { showToast } = useToast();
@@ -28,9 +43,22 @@ export default function ProblemSolver() {
   const [isEditing, setIsEditing] = useState(false);
   const [source, setSource] = useState('');
 
-  // LeetCode-style console: 'testcase' | 'result'
+  // LeetCode-style console: 'testcase' | 'result' + collapse
   const [consoleTab, setConsoleTab] = useState('testcase');
+  const [consoleOpen, setConsoleOpen] = useState(true);
   const [selectedCase, setSelectedCase] = useState(0);
+
+  // Left-pane tabs: description | editorial | solutions | submissions
+  const [descTab, setDescTab] = useState('description');
+
+  // Submission history for the Submissions tab
+  const [submissions, setSubmissions] = useState(null);
+  const [subsLoading, setSubsLoading] = useState(false);
+
+  // Draggable split between description and code panes (percent for left pane)
+  const [splitPct, setSplitPct] = useState(42);
+  const workspaceRef = useRef(null);
+  const draggingRef = useRef(false);
 
   // Test run result state
   const [testResult, setTestResult] = useState(null);
@@ -117,6 +145,59 @@ export default function ProblemSolver() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Global mouse handlers for the draggable split resizer
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      if (!draggingRef.current || !workspaceRef.current) return;
+      const rect = workspaceRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setSplitPct(Math.min(70, Math.max(25, pct)));
+    };
+    const stopDrag = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', stopDrag);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', stopDrag);
+    };
+  }, []);
+
+  const startDrag = (e) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  // Fetch submission history (for the Submissions tab)
+  const fetchSubmissions = useCallback(async () => {
+    setSubsLoading(true);
+    try {
+      const res = await fetch('/api/history?limit=100');
+      if (res.ok) {
+        const data = await res.json();
+        setSubmissions(Array.isArray(data) ? data : []);
+      } else {
+        setSubmissions([]);
+      }
+    } catch {
+      setSubmissions([]);
+    } finally {
+      setSubsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (descTab === 'submissions' && submissions === null) {
+      fetchSubmissions();
+    }
+  }, [descTab, submissions, fetchSubmissions]);
+
   const handleInspect = async (target = null) => {
     setShowSuggestions(false);
     const identifier = cleanInput(target || inputSlug);
@@ -131,6 +212,8 @@ export default function ProblemSolver() {
     setSelectedCase(0);
     setConsoleTab('testcase');
     setIsEditing(false);
+    setDescTab('description');
+    setSubmissions(null);
     showToast(`Loading problem #${identifier}...`, 'info');
 
     try {
@@ -173,6 +256,7 @@ export default function ProblemSolver() {
     }
 
     setTesting(true);
+    setConsoleOpen(true);
     setConsoleTab('result');
     showToast(`Testing solution against example testcases...`, 'info');
 
@@ -215,6 +299,7 @@ export default function ProblemSolver() {
 
     setSubmitting(true);
     setSubmitResult(null);
+    setConsoleOpen(true);
     setConsoleTab('result');
     showToast(`Submitting to LeetCode...`, 'info');
 
@@ -231,6 +316,7 @@ export default function ProblemSolver() {
 
       const data = await res.json();
       setSubmitResult(data);
+      setSubmissions(null); // refetch on next Submissions tab visit
 
       if (data.success) {
         showToast(`LeetCode Result: ${data.status || 'Accepted'}`, 'success');
@@ -268,6 +354,17 @@ export default function ProblemSolver() {
           /* keep current code on refetch failure */
         });
     }
+  };
+
+  const handleViewSubmission = (sub) => {
+    if (!sub.code) {
+      showToast('No code stored for this submission', 'error');
+      return;
+    }
+    setCode(sub.code);
+    setSource(`Submission #${sub.id}`);
+    if (sub.language) setLanguage(sub.language);
+    showToast(`Loaded submission #${sub.id} into the editor`, 'success');
   };
 
   const getDifficultyClass = (diff) => {
@@ -317,6 +414,111 @@ export default function ProblemSolver() {
     ? `https://leetcode.com/problems/${problemInfo.title_slug}/`
     : null;
   const topics = Array.isArray(problemInfo?.topic_tags) ? problemInfo.topic_tags : [];
+
+  // Submissions filtered to the currently loaded problem
+  const problemSubmissions = (submissions || []).filter((item) => {
+    if (problemId != null && String(item.problem_id) === String(problemId)) return true;
+    if (problemInfo?.title && item.problem_title === problemInfo.title) return true;
+    return false;
+  });
+
+  const renderTabContent = () => {
+    if (descTab === 'description') {
+      return (
+        <div
+          className="lc-desc-body markdown-body"
+          dangerouslySetInnerHTML={{
+            __html:
+              cleanDescription(problemInfo?.content || problemInfo?.question_content) ||
+              '<p>No description available.</p>',
+          }}
+        />
+      );
+    }
+
+    if (descTab === 'editorial' || descTab === 'solutions') {
+      const isEditorial = descTab === 'editorial';
+      return (
+        <div className="lc-tab-empty">
+          <div className="lc-tab-empty-icon" aria-hidden="true">
+            {isEditorial ? <Newspaper size={20} /> : <MessagesSquare size={20} />}
+          </div>
+          <h3>{isEditorial ? 'Official Editorial' : 'Community Solutions'}</h3>
+          <p>
+            {isEditorial
+              ? 'The official write-up for this problem lives on LeetCode.'
+              : 'Browse thousands of community solutions on LeetCode Discuss.'}
+          </p>
+          {problemUrl && (
+            <a className="btn btn-secondary btn-sm" href={problemUrl} target="_blank" rel="noreferrer">
+              <ExternalLink size={13} />
+              <span>Open on LeetCode</span>
+            </a>
+          )}
+        </div>
+      );
+    }
+
+    // Submissions tab
+    if (subsLoading) {
+      return (
+        <div className="lc-tab-empty" role="status" aria-live="polite">
+          <Loader2 size={18} className="animate-spin" />
+          <p>Loading submissions…</p>
+        </div>
+      );
+    }
+
+    if (problemSubmissions.length === 0) {
+      return (
+        <div className="lc-tab-empty">
+          <div className="lc-tab-empty-icon" aria-hidden="true">
+            <HistoryIcon size={20} />
+          </div>
+          <h3>No submissions yet</h3>
+          <p>Hit Run to test, or Submit to send your solution to LeetCode — results will appear here.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="lc-subs-list">
+        {problemSubmissions.map((sub) => {
+          const accepted = sub.status === 'Accepted';
+          return (
+            <div key={sub.id} className="lc-sub-row">
+              <span className={`lc-sub-dot ${accepted ? 'pass' : 'fail'}`} aria-hidden="true" />
+              <div className="lc-sub-main">
+                <span className={`lc-sub-status ${accepted ? 'pass' : 'fail'}`}>
+                  {sub.status || 'Unknown'}
+                </span>
+                <span className="lc-sub-meta">
+                  {sub.language || '—'}
+                  {sub.runtime ? ` · ${sub.runtime}` : ''}
+                  {sub.memory ? ` · ${sub.memory}` : ''}
+                </span>
+              </div>
+              <div className="lc-sub-side">
+                <span className="lc-sub-time" title={sub.date || ''}>
+                  <Clock size={12} />
+                  {(sub.date || '').slice(0, 10) || '—'}
+                </span>
+                {sub.code && (
+                  <button
+                    type="button"
+                    className="lc-sub-view"
+                    onClick={() => handleViewSubmission(sub)}
+                  >
+                    View
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div className="solver-page">
@@ -404,9 +606,13 @@ export default function ProblemSolver() {
 
       {/* ── Workspace ────────────────────────────────────────────────────── */}
       {hasWorkspace ? (
-        <div className="lc-split">
+        <div className="lc-workspace" ref={workspaceRef}>
           {/* LEFT — problem description */}
-          <section className="lc-pane lc-pane--desc" aria-label="Problem description">
+          <section
+            className="lc-pane lc-pane--desc"
+            style={{ width: `${splitPct}%` }}
+            aria-label="Problem description"
+          >
             {problemInfo ? (
               <>
                 <header className="lc-desc-head">
@@ -428,20 +634,32 @@ export default function ProblemSolver() {
                       <ExternalLink size={13} />
                     </a>
                   </div>
+
+                  <div className="lc-desc-tabs" role="tablist" aria-label="Problem views">
+                    {DESC_TABS.map((tab) => {
+                      const Icon = tab.icon;
+                      const active = descTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          className={`lc-desc-tab${active ? ' active' : ''}`}
+                          onClick={() => setDescTab(tab.id)}
+                        >
+                          <Icon size={14} aria-hidden="true" />
+                          <span>{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </header>
 
-                <div
-                  className="lc-desc-body markdown-body"
-                  dangerouslySetInnerHTML={{
-                    __html:
-                      cleanDescription(problemInfo.content || problemInfo.question_content) ||
-                      '<p>No description available.</p>',
-                  }}
-                />
+                <div className="lc-desc-scroll">{renderTabContent()}</div>
 
-                {topics.length > 0 && (
+                {descTab === 'description' && topics.length > 0 && (
                   <footer className="lc-desc-topics">
-                    <span className="lc-topics-label">Related Topics</span>
                     <div className="lc-tag-row">
                       {topics.map((tag) => (
                         <span key={tag} className="lc-tag-chip">
@@ -458,6 +676,17 @@ export default function ProblemSolver() {
               </div>
             )}
           </section>
+
+          {/* Draggable divider */}
+          <div
+            className="lc-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panes"
+            onMouseDown={startDrag}
+          >
+            <span className="lc-resizer-grip" aria-hidden="true" />
+          </div>
 
           {/* RIGHT — code workspace */}
           <section className="lc-pane lc-pane--code" aria-label="Solution workspace">
@@ -504,6 +733,39 @@ export default function ProblemSolver() {
                 >
                   <Copy size={14} />
                 </button>
+
+                {/* LeetCode-style Run | Submit group */}
+                <div className="lc-run-group" role="group" aria-label="Run and submit">
+                  <button
+                    type="button"
+                    className="lc-run-btn"
+                    onClick={handleRunTests}
+                    disabled={previewing || submitting || testing || !code}
+                    title="Run testcases on LeetCode without submitting"
+                  >
+                    {testing ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Play size={14} aria-hidden="true" />
+                    )}
+                    <span>{testing ? 'Running…' : 'Run'}</span>
+                  </button>
+                  <span className="lc-run-divider" aria-hidden="true" />
+                  <button
+                    type="button"
+                    className="lc-run-btn lc-run-btn--submit"
+                    onClick={handleSubmit}
+                    disabled={previewing || submitting || testing || !code}
+                    title="Submit solution to LeetCode"
+                  >
+                    {submitting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Send size={14} aria-hidden="true" />
+                    )}
+                    <span>{submitting ? 'Judging…' : 'Submit'}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -521,7 +783,7 @@ export default function ProblemSolver() {
               )}
             </div>
 
-            <div className="lc-console">
+            <div className={`lc-console${consoleOpen ? '' : ' collapsed'}`}>
               <div className="lc-console-bar">
                 <div className="lc-console-tabs" role="tablist" aria-label="Console panels">
                   <button
@@ -529,241 +791,247 @@ export default function ProblemSolver() {
                     role="tab"
                     aria-selected={consoleTab === 'testcase'}
                     className={`lc-console-tab${consoleTab === 'testcase' ? ' active' : ''}`}
-                    onClick={() => setConsoleTab('testcase')}
+                    onClick={() => {
+                      setConsoleTab('testcase');
+                      setConsoleOpen(true);
+                    }}
                   >
-                    Testcase
+                    <TerminalSquare size={14} aria-hidden="true" />
+                    <span>Testcase</span>
                   </button>
                   <button
                     type="button"
                     role="tab"
                     aria-selected={consoleTab === 'result'}
                     className={`lc-console-tab${consoleTab === 'result' ? ' active' : ''}`}
-                    onClick={() => setConsoleTab('result')}
+                    onClick={() => {
+                      setConsoleTab('result');
+                      setConsoleOpen(true);
+                    }}
                   >
-                    Result
+                    <span>Result</span>
                     {(testing || submitting) && (
                       <Loader2 size={12} className="animate-spin lc-tab-spin" aria-hidden="true" />
                     )}
                   </button>
                 </div>
 
-                <div className="lc-console-actions">
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={handleRunTests}
-                    disabled={previewing || submitting || testing || !code}
-                    title="Run testcases on LeetCode without submitting"
-                  >
-                    {testing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                    <span>{testing ? 'Running…' : 'Run'}</span>
-                  </button>
-
-                  <button
-                    className="btn btn-submit btn-sm"
-                    onClick={handleSubmit}
-                    disabled={previewing || submitting || testing || !code}
-                    title="Submit solution to LeetCode"
-                  >
-                    {submitting ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                    <span>{submitting ? 'Judging…' : 'Submit'}</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="lc-icon-btn lc-console-toggle"
+                  onClick={() => setConsoleOpen((v) => !v)}
+                  aria-expanded={consoleOpen}
+                  title={consoleOpen ? 'Collapse console' : 'Expand console'}
+                  aria-label={consoleOpen ? 'Collapse console' : 'Expand console'}
+                >
+                  <ChevronDown
+                    size={15}
+                    style={{ transform: consoleOpen ? 'none' : 'rotate(180deg)' }}
+                  />
+                </button>
               </div>
 
-              <div className="lc-console-body">
-                {consoleTab === 'testcase' ? (
-                  <div>
-                    <textarea
-                      className="lc-testcase-input"
-                      rows={4}
-                      value={customInput}
-                      onChange={(e) => setCustomInput(e.target.value)}
-                      placeholder={'nums = [2,7,11,15]\ntarget = 9'}
-                      aria-label="Testcase input"
-                    />
-                    <p className="lc-testcase-hint">
-                      One line per argument, in parameter order. Samples are pre-filled when a
-                      problem loads.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="lc-result-view">
-                    {/* Judging in progress */}
-                    {(testing || submitting) && (
-                      <div className="lc-pending" role="status" aria-live="polite">
-                        <Loader2 size={15} className="animate-spin" />
-                        <span>Judging…</span>
-                      </div>
-                    )}
-
-                    {/* Idle placeholder */}
-                    {!testing && !submitting && !submitResult && !testResult && (
-                      <p className="lc-result-placeholder">
-                        Press <span className="lc-kbd">Run</span> to test against the sample cases,
-                        or <span className="lc-kbd">Submit</span> for the official LeetCode verdict.
+              {consoleOpen && (
+                <div className="lc-console-body">
+                  {consoleTab === 'testcase' ? (
+                    <div>
+                      <textarea
+                        className="lc-testcase-input"
+                        rows={4}
+                        value={customInput}
+                        onChange={(e) => setCustomInput(e.target.value)}
+                        placeholder={'nums = [2,7,11,15]\ntarget = 9'}
+                        aria-label="Testcase input"
+                      />
+                      <p className="lc-testcase-hint">
+                        One line per argument, in parameter order. Samples are pre-filled when a
+                        problem loads.
                       </p>
-                    )}
-
-                    {/* Official submission verdict */}
-                    {!submitting && submitResult && (
-                      <div className="lc-submission">
-                        <div className={`lc-verdict ${verdictClass(submitResult)}`}>
-                          {submitResult.success ? (
-                            <CheckCircle size={16} />
-                          ) : (
-                            <AlertCircle size={16} />
-                          )}
-                          <span>
-                            {submitResult.status ||
-                              (submitResult.success ? 'Accepted' : 'Submission Failed')}
-                          </span>
+                    </div>
+                  ) : (
+                    <div className="lc-result-view">
+                      {/* Judging in progress */}
+                      {(testing || submitting) && (
+                        <div className="lc-pending" role="status" aria-live="polite">
+                          <Loader2 size={15} className="animate-spin" />
+                          <span>Judging…</span>
                         </div>
+                      )}
 
-                        {(submitResult.runtime || submitResult.memory) && (
-                          <div className="lc-verdict-metrics">
-                            {submitResult.runtime && (
-                              <span className="result-metric">
-                                Runtime <strong>{submitResult.runtime}</strong>
-                              </span>
+                      {/* Idle placeholder */}
+                      {!testing && !submitting && !submitResult && !testResult && (
+                        <p className="lc-result-placeholder">
+                          Press <span className="lc-kbd">Run</span> to test against the sample
+                          cases, or <span className="lc-kbd">Submit</span> for the official
+                          LeetCode verdict.
+                        </p>
+                      )}
+
+                      {/* Official submission verdict */}
+                      {!submitting && submitResult && (
+                        <div className="lc-submission">
+                          <div className={`lc-verdict ${verdictClass(submitResult)}`}>
+                            {submitResult.success ? (
+                              <CheckCircle size={16} />
+                            ) : (
+                              <AlertCircle size={16} />
                             )}
-                            {submitResult.memory && (
-                              <span className="result-metric">
-                                Memory <strong>{submitResult.memory}</strong>
-                              </span>
-                            )}
-                            <span className="result-metric">
-                              Pipeline <strong>{submitResult.execution_time_ms} ms</strong>
+                            <span>
+                              {submitResult.status ||
+                                (submitResult.success ? 'Accepted' : 'Submission Failed')}
                             </span>
                           </div>
-                        )}
 
-                        {submitResult.error &&
-                          (isSimulated(submitResult) ? (
-                            <p className="lc-sim-note">{submitResult.error}</p>
-                          ) : (
-                            <pre className="result-error">{submitResult.error}</pre>
-                          ))}
-                      </div>
-                    )}
-
-                    {/* Test run results */}
-                    {!testing && testResult && (
-                      <div className="lc-testrun">
-                        <div className={`lc-verdict ${testResult.success ? 'success' : 'error'}`}>
-                          {testResult.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                          <span>
-                            {testResult.status_msg ||
-                              testResult.status ||
-                              (testResult.success ? 'Accepted' : 'Failed')}
-                          </span>
-                        </div>
-
-                        {testResult.total_testcases ? (
-                          <p className="lc-cases-count">
-                            <strong>{testResult.total_correct}</strong> / {testResult.total_testcases}{' '}
-                            cases passed
-                          </p>
-                        ) : null}
-
-                        {testResult.compile_error && (
-                          <pre className="result-error">{testResult.compile_error}</pre>
-                        )}
-                        {testResult.runtime_error && (
-                          <pre className="result-error">{testResult.runtime_error}</pre>
-                        )}
-
-                        {Array.isArray(testResult.code_answer) &&
-                          testResult.code_answer.length > 0 && (
-                            <>
-                              {customInput && customInput.trim() && (
-                                <div className="lc-io-section">
-                                  <div className="io-label">Input</div>
-                                  <pre className="io-block">{customInput}</pre>
-                                </div>
+                          {(submitResult.runtime || submitResult.memory) && (
+                            <div className="lc-verdict-metrics">
+                              {submitResult.runtime && (
+                                <span className="result-metric">
+                                  Runtime <strong>{submitResult.runtime}</strong>
+                                </span>
                               )}
+                              {submitResult.memory && (
+                                <span className="result-metric">
+                                  Memory <strong>{submitResult.memory}</strong>
+                                </span>
+                              )}
+                              <span className="result-metric">
+                                Pipeline <strong>{submitResult.execution_time_ms} ms</strong>
+                              </span>
+                            </div>
+                          )}
 
-                              <div
-                                className="lc-case-chips"
-                                role="tablist"
-                                aria-label="Test cases"
-                              >
-                                {testResult.code_answer.map((ans, idx) => {
+                          {submitResult.error &&
+                            (isSimulated(submitResult) ? (
+                              <p className="lc-sim-note">{submitResult.error}</p>
+                            ) : (
+                              <pre className="result-error">{submitResult.error}</pre>
+                            ))}
+                        </div>
+                      )}
+
+                      {/* Test run results */}
+                      {!testing && testResult && (
+                        <div className="lc-testrun">
+                          <div className={`lc-verdict ${testResult.success ? 'success' : 'error'}`}>
+                            {testResult.success ? (
+                              <CheckCircle size={16} />
+                            ) : (
+                              <AlertCircle size={16} />
+                            )}
+                            <span>
+                              {testResult.status_msg ||
+                                testResult.status ||
+                                (testResult.success ? 'Accepted' : 'Failed')}
+                            </span>
+                          </div>
+
+                          {testResult.total_testcases ? (
+                            <p className="lc-cases-count">
+                              <strong>{testResult.total_correct}</strong> /{' '}
+                              {testResult.total_testcases} cases passed
+                            </p>
+                          ) : null}
+
+                          {testResult.compile_error && (
+                            <pre className="result-error">{testResult.compile_error}</pre>
+                          )}
+                          {testResult.runtime_error && (
+                            <pre className="result-error">{testResult.runtime_error}</pre>
+                          )}
+
+                          {Array.isArray(testResult.code_answer) &&
+                            testResult.code_answer.length > 0 && (
+                              <>
+                                {customInput && customInput.trim() && (
+                                  <div className="lc-io-section">
+                                    <div className="io-label">Input</div>
+                                    <pre className="io-block">{customInput}</pre>
+                                  </div>
+                                )}
+
+                                <div
+                                  className="lc-case-chips"
+                                  role="tablist"
+                                  aria-label="Test cases"
+                                >
+                                  {testResult.code_answer.map((ans, idx) => {
+                                    const expected = testResult.expected_code_answer
+                                      ? testResult.expected_code_answer[idx]
+                                      : null;
+                                    const isMatch = expected ? ans === expected : true;
+                                    return (
+                                      <button
+                                        key={idx}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={selectedCase === idx}
+                                        className={`lc-case-chip${selectedCase === idx ? ' active' : ''}`}
+                                        onClick={() => setSelectedCase(idx)}
+                                      >
+                                        <span
+                                          className={`chip-dot ${isMatch ? 'pass' : 'fail'}`}
+                                          aria-hidden="true"
+                                        />
+                                        Case {idx + 1}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                {(() => {
+                                  const idx = Math.min(
+                                    selectedCase,
+                                    testResult.code_answer.length - 1
+                                  );
+                                  const ans = testResult.code_answer[idx];
                                   const expected = testResult.expected_code_answer
                                     ? testResult.expected_code_answer[idx]
                                     : null;
                                   const isMatch = expected ? ans === expected : true;
+                                  const stdout = testResult.std_output_list
+                                    ? testResult.std_output_list[idx]
+                                    : null;
+
                                   return (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      role="tab"
-                                      aria-selected={selectedCase === idx}
-                                      className={`lc-case-chip${selectedCase === idx ? ' active' : ''}`}
-                                      onClick={() => setSelectedCase(idx)}
-                                    >
-                                      <span
-                                        className={`chip-dot ${isMatch ? 'pass' : 'fail'}`}
-                                        aria-hidden="true"
-                                      />
-                                      Case {idx + 1}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              {(() => {
-                                const idx = Math.min(
-                                  selectedCase,
-                                  testResult.code_answer.length - 1
-                                );
-                                const ans = testResult.code_answer[idx];
-                                const expected = testResult.expected_code_answer
-                                  ? testResult.expected_code_answer[idx]
-                                  : null;
-                                const isMatch = expected ? ans === expected : true;
-                                const stdout = testResult.std_output_list
-                                  ? testResult.std_output_list[idx]
-                                  : null;
-
-                                return (
-                                  <div>
-                                    <div className="lc-io-grid">
-                                      <div>
-                                        <div className="io-label">Your output</div>
-                                        <pre className={`io-block ${isMatch ? 'pass' : 'fail'}`}>
-                                          {ans || 'null'}
-                                        </pre>
-                                      </div>
-                                      {expected && (
+                                    <div>
+                                      <div className="lc-io-grid">
                                         <div>
-                                          <div className="io-label">Expected</div>
-                                          <pre className="io-block expected">{expected}</pre>
+                                          <div className="io-label">Your output</div>
+                                          <pre className={`io-block ${isMatch ? 'pass' : 'fail'}`}>
+                                            {ans || 'null'}
+                                          </pre>
                                         </div>
-                                      )}
-                                    </div>
-
-                                    {stdout && stdout.trim() ? (
-                                      <div className="lc-io-section">
-                                        <div className="io-label">Stdout</div>
-                                        <pre className="io-block stdout">{stdout}</pre>
+                                        {expected && (
+                                          <div>
+                                            <div className="io-label">Expected</div>
+                                            <pre className="io-block expected">{expected}</pre>
+                                          </div>
+                                        )}
                                       </div>
-                                    ) : null}
-                                  </div>
-                                );
-                              })()}
-                            </>
-                          )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+
+                                      {stdout && stdout.trim() ? (
+                                        <div className="lc-io-section">
+                                          <div className="io-label">Stdout</div>
+                                          <pre className="io-block stdout">{stdout}</pre>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })()}
+                              </>
+                            )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </section>
         </div>
       ) : (
         /* Empty state — nothing loaded yet */
-        <div className="lc-split lc-split-empty">
+        <div className="lc-workspace lc-workspace-empty">
           <div className="lc-empty">
             <div className="lc-empty-icon" aria-hidden="true">
               <Code2 size={22} />
