@@ -20,7 +20,7 @@ use crate::database::{Database, SubmissionRecord};
 use crate::handlers::{
     get_daily_handler, get_history_handler, get_problem_handler, get_session_status_handler,
     get_stats_handler, health_handler, preview_solution_handler, save_session_handler,
-    solve_handler, AppState,
+    search_problems_handler, solve_handler, test_solution_handler, AppState,
 };
 use crate::leetcode::LeetCodeClient;
 use crate::solution::SolutionFetcher;
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let problem = if let Some(ref s) = slug {
             println!("🔍 Fetching problem details for '{}'...", s);
-            leetcode.fetch_problem_by_slug(s).await?
+            leetcode.fetch_problem_by_slug_or_id(s).await?
         } else {
             println!("📥 Fetching today's daily problem from LeetCode GraphQL...");
             leetcode.fetch_daily_problem().await?
@@ -212,8 +212,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/stats", get(get_stats_handler))
         .route("/api/history", get(get_history_handler))
         .route("/api/daily", get(get_daily_handler))
+        .route("/api/search", get(search_problems_handler))
         .route("/api/problem/:slug", get(get_problem_handler))
         .route("/api/preview/:slug", get(preview_solution_handler))
+        .route("/api/test", post(test_solution_handler))
         .route("/api/solve", post(solve_handler))
         .route("/api/session/status", get(get_session_status_handler))
         .route("/api/session", post(save_session_handler))

@@ -254,14 +254,16 @@ pub async fn test_solution_handler(
         }))).into_response(),
     };
 
-    let custom_input = payload.data_input.as_deref().filter(|s| !s.trim().is_empty());
-    let data_input = custom_input.or_else(|| {
-        if !problem.example_testcase_list.is_empty() {
-            None
-        } else {
-            problem.sample_test_case.as_deref()
-        }
-    });
+    let default_input = if !problem.example_testcase_list.is_empty() {
+        problem.example_testcase_list.join("\n")
+    } else {
+        problem.sample_test_case.clone().unwrap_or_default()
+    };
+
+    let data_input_to_send = match payload.data_input {
+        Some(ref inp) if !inp.trim().is_empty() => inp.as_str(),
+        _ => &default_input,
+    };
 
     match state.leetcode.run_test_cases(
         &session,
@@ -270,7 +272,7 @@ pub async fn test_solution_handler(
         &problem.question_id,
         &language,
         &code,
-        data_input,
+        Some(data_input_to_send),
     ).await {
         Ok(res) => (StatusCode::OK, Json(serde_json::json!({
             "success": res.run_success && res.correct_answer.unwrap_or(false),

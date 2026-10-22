@@ -626,6 +626,13 @@ impl LeetCodeClient {
             if let Ok(resp) = check_resp {
                 if let Ok(res_json) = resp.json::<serde_json::Value>().await {
                     let state = res_json.get("state").and_then(|v| v.as_str()).unwrap_or("");
+                    if state == "FAILURE" {
+                        let status_msg = res_json.get("status_msg")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Execution failed")
+                            .to_string();
+                        return Err(format!("LeetCode test error: {}", status_msg));
+                    }
                     if state == "SUCCESS" {
                         let status_code = res_json.get("status_code").and_then(|v| v.as_i64());
                         let status_msg = res_json.get("status_msg")
