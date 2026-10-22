@@ -17,7 +17,6 @@ import ResultPanel from '../components/ResultPanel';
 import EmptyState from '../components/EmptyState';
 import { Skeleton } from '../components/Skeleton';
 import { getDifficultyClass, copyToClipboard, cn } from '../lib/utils';
-import IndianTimerCard from '../components/IndianTimer';
 
 export default function DailyChallenge() {
   const { showToast } = useToast();
@@ -163,18 +162,15 @@ export default function DailyChallenge() {
         </button>
       </div>
 
-      {/* Indian Standard Time & LeetCode Reset Timer */}
-      <IndianTimerCard />
-
       <div className="grid-2-wide">
         {/* Left: problem statement */}
         <div className="card">
           <div className="card-header">
             <div className="card-title-group">
-              <span className="mono" style={{ color: '#a78bfa', fontWeight: 700 }}>
+              <span className="mono" style={{ color: 'var(--accent-strong)', fontWeight: 700 }}>
                 #{problemId}
               </span>
-              <h2 style={{ overflowWrap: 'anywhere' }}>{problemTitle}</h2>
+              <h2 style={{ overflowWrap: 'anywhere', textTransform: 'none', letterSpacing: 0, fontSize: '15px' }}>{problemTitle}</h2>
             </div>
             {daily && (
               <span className={cn('badge', getDifficultyClass(daily.difficulty))}>

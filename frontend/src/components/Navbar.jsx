@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
-  Calendar,
+  CalendarClock,
   Terminal,
   History,
   Settings,
@@ -11,15 +11,80 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { CompactIndianTimer } from './IndianTimer';
 
 const NAV_ITEMS = [
   { to: '/', end: true, icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/daily', icon: Calendar, label: 'Daily Challenge' },
+  { to: '/daily', icon: CalendarClock, label: 'Daily Challenge' },
   { to: '/solver', icon: Terminal, label: 'Problem Solver' },
   { to: '/history', icon: History, label: 'History' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
+
+function Brand({ compact = false }) {
+  return (
+    <NavLink to="/" className="brand" aria-label="LeetCode Auto home">
+      <span className="brand-icon">
+        <Zap size={compact ? 16 : 18} strokeWidth={2.4} />
+      </span>
+      {!compact && (
+        <span className="brand-text">
+          <span className="brand-title">
+            LeetCode<span className="brand-accent">Auto</span>
+          </span>
+          <span className="brand-badge">Rust + React</span>
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
+function SessionChip({ authStatus, statusText, statusTitle }) {
+  return (
+    <div
+      className="session-chip"
+      title={statusTitle}
+      aria-live="polite"
+      role="status"
+    >
+      <span
+        className={cn(
+          'status-indicator',
+          !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
+        )}
+      />
+      <span className="session-chip-text">
+        <span className="session-chip-label">
+          {authStatus.checked ? (authStatus.valid ? 'Signed in as' : 'Session') : 'Checking…'}
+        </span>
+        <span className="session-chip-user">
+          {authStatus.checked
+            ? authStatus.valid
+              ? authStatus.username || 'Active'
+              : 'Not configured'
+            : statusText}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function NavLinks() {
+  return (
+    <>
+      {NAV_ITEMS.map(({ to, end, icon: Icon, label }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={end}
+          className={({ isActive }) => cn('nav-btn', isActive && 'active')}
+        >
+          <Icon size={16} />
+          <span>{label}</span>
+        </NavLink>
+      ))}
+    </>
+  );
+}
 
 export default function Navbar() {
   const [authStatus, setAuthStatus] = useState({ checked: false, valid: false, username: null });
@@ -51,15 +116,25 @@ export default function Navbar() {
     };
   }, []);
 
-  // Close the mobile menu whenever the route changes
+  // Close the mobile drawer whenever the route changes
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
 
-  // Lock body scroll while the mobile menu is open
+  // Lock body scroll while the drawer is open
   useEffect(() => {
     document.body.classList.toggle('modal-open', menuOpen);
     return () => document.body.classList.remove('modal-open');
+  }, [menuOpen]);
+
+  // Escape closes the drawer
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
   }, [menuOpen]);
 
   const statusText = !authStatus.checked
@@ -78,91 +153,85 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="app-header">
-        <div className="nav-container">
-          <NavLink to="/" className="brand" aria-label="LeetCode Auto home">
-            <span className="brand-icon">
-              <Zap size={20} />
-            </span>
-            <span className="brand-text">
-              <span className="brand-title">
-                LeetCode<span className="highlight">Auto</span>
-              </span>
-              <span className="brand-badge">Rust + React</span>
-            </span>
-          </NavLink>
+      {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <Brand />
+        </div>
 
-          <nav className="nav-links" aria-label="Primary">
-            {NAV_ITEMS.map(({ to, end, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) => cn('nav-btn', isActive && 'active')}
-              >
-                <Icon size={17} />
-                <span>{label}</span>
-              </NavLink>
-            ))}
-          </nav>
+        <nav className="sidebar-nav" aria-label="Primary">
+          <span className="sidebar-nav-label">Console</span>
+          <NavLinks />
+        </nav>
 
-          <div className="nav-right">
-            <CompactIndianTimer />
+        <div className="sidebar-foot">
+          <SessionChip
+            authStatus={authStatus}
+            statusText={statusText}
+            statusTitle={statusTitle}
+          />
+        </div>
+      </aside>
 
-            <div
-              className="nav-status"
-              title={statusTitle}
-              aria-live="polite"
-              role="status"
-            >
-              <span
-                className={cn(
-                  'status-indicator',
-                  !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
-                )}
-              />
-              <span className="status-text">{statusText}</span>
-            </div>
+      {/* ── Mobile topbar ───────────────────────────────────────────────── */}
+      <header className="topbar">
+        <button
+          type="button"
+          className="nav-toggle"
+          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          aria-expanded={menuOpen}
+          aria-controls="mobile-drawer"
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
 
-            <button
-              type="button"
-              className="nav-toggle"
-              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((o) => !o)}
-            >
-              {menuOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
-          </div>
+        <Brand compact />
+
+        <div className="topbar-spacer">
+          <span
+            className={cn(
+              'status-indicator',
+              !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
+            )}
+            role="status"
+            aria-live="polite"
+            aria-label={statusText}
+            title={statusTitle}
+          />
         </div>
       </header>
 
-      {menuOpen && (
-        <div className="mobile-menu">
-          <nav aria-label="Mobile">
-            {NAV_ITEMS.map(({ to, end, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) => cn('nav-btn', isActive && 'active')}
-              >
-                <Icon size={18} />
-                <span>{label}</span>
-              </NavLink>
-            ))}
-          </nav>
-          <div className="nav-status">
-            <span
-              className={cn(
-                'status-indicator',
-                !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
-              )}
-            />
-            <span className="status-text">{statusText}</span>
-          </div>
+      {/* ── Mobile drawer ───────────────────────────────────────────────── */}
+      <div
+        className={cn('drawer-overlay')}
+        style={{ display: menuOpen ? undefined : 'none' }}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden="true"
+      />
+      <div
+        id="mobile-drawer"
+        className={cn('drawer', menuOpen && 'open')}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation menu"
+      >
+        <div className="drawer-brand">
+          <Brand />
         </div>
-      )}
+
+        <nav className="drawer-nav" aria-label="Primary mobile">
+          <NavLinks />
+        </nav>
+
+        <div className="drawer-foot">
+          <SessionChip
+            authStatus={authStatus}
+            statusText={statusText}
+            statusTitle={statusTitle}
+          />
+        </div>
+      </div>
     </>
   );
 }

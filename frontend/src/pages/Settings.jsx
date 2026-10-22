@@ -244,7 +244,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <div className="row" style={{ gap: 8 }}>
-                      <strong style={{ color: '#fb7185' }}>No Valid Session Found</strong>
+                      <strong style={{ color: 'var(--danger-text)' }}>No Valid Session Found</strong>
                       <span className="badge badge-danger">Unauthenticated</span>
                     </div>
                     <p style={{ fontSize: '0.84rem', marginTop: 2 }}>
@@ -369,72 +369,29 @@ export default function SettingsPage() {
                 <h2>System Architecture</h2>
               </div>
             </div>
-            <div className="card-body" style={{ padding: '12px 24px 16px' }}>
-              {[
-                { icon: Server, label: 'Server Runtime', value: 'Rust + Axum 0.7', color: '#a78bfa' },
-                { icon: Database, label: 'Memory Footprint', value: '< 15 MB (Render Free Tier Safe)', color: '#34d399' },
-                { icon: Calendar, label: 'Daily Cron Trigger', value: '10:00 AM UTC (tokio-cron-scheduler)', color: 'var(--text-primary)' },
-                { icon: Database, label: 'Solution Repository', value: 'doocs/leetcode (3,500+ problems)', color: '#a78bfa' },
-              ].map(({ icon: Icon, label, value, color }, i) => (
-                <div
-                  key={label}
-                  className="row-between"
-                  style={{
-                    padding: '12px 0',
-                    borderBottom: i < 3 ? '1px solid var(--border-subtle)' : 'none',
-                  }}
-                >
-                  <span className="row" style={{ gap: 9, color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
-                    <Icon size={15} style={{ color: 'var(--text-muted)' }} />
-                    {label}
-                  </span>
-                  <span style={{ fontWeight: 600, fontSize: '0.88rem', color, textAlign: 'right' }}>
-                    {value}
-                  </span>
-                </div>
-              ))}
+            <div className="card-body" style={{ padding: '4px 20px 10px' }}>
+              <div className="def-list">
+                {[
+                  { icon: Server, label: 'Server Runtime', value: 'Rust + Axum 0.7', tone: 'var(--accent-strong)' },
+                  { icon: Database, label: 'Memory Footprint', value: '< 15 MB (Render Free Tier Safe)', tone: 'var(--success-text)' },
+                  { icon: Calendar, label: 'Daily Cron Trigger', value: '10:00 AM UTC (tokio-cron-scheduler)', tone: 'var(--text-primary)' },
+                  { icon: Database, label: 'Solution Repository', value: 'doocs/leetcode (3,500+ problems)', tone: 'var(--accent-strong)' },
+                ].map(({ icon: Icon, label, value, tone }) => (
+                  <div key={label} className="def-row">
+                    <span className="def-key">
+                      <Icon size={15} />
+                      {label}
+                    </span>
+                    <span className="def-value" style={{ color: tone }}>
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </div>
-
-      <style>{`
-        .guide-steps {
-          padding-left: 0;
-          margin: 0;
-          list-style: none;
-          counter-reset: guide;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          font-size: 0.89rem;
-          color: #c3cedd;
-        }
-        .guide-steps li {
-          counter-increment: guide;
-          position: relative;
-          padding-left: 40px;
-          line-height: 1.55;
-        }
-        .guide-steps li::before {
-          content: counter(guide);
-          position: absolute;
-          left: 0;
-          top: 1px;
-          width: 26px;
-          height: 26px;
-          border-radius: 8px;
-          background: rgba(139, 92, 246, 0.14);
-          border: 1px solid rgba(139, 92, 246, 0.3);
-          color: #c4b5fd;
-          font-family: var(--font-heading);
-          font-weight: 700;
-          font-size: 0.8rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-      `}</style>
     </div>
   );
 }

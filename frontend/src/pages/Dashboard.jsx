@@ -6,15 +6,12 @@ import {
   CheckCircle2,
   BarChart2,
   Target,
-  Clock,
   Calendar,
   ArrowRight,
   ExternalLink,
   Code2,
   Activity,
   Inbox,
-  Timer,
-  Flame,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import CodeModal from '../components/CodeModal';
@@ -22,7 +19,7 @@ import StatCard from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import { Skeleton, SkeletonTableRows } from '../components/Skeleton';
 import { getDifficultyClass, cn } from '../lib/utils';
-import IndianTimerCard from '../components/IndianTimer';
+import { NextSolveCountdown } from '../components/IndianTimer';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -94,9 +91,6 @@ export default function Dashboard() {
   const acceptedSubmissions = Number(stats?.accepted ?? 0);
   const rawSuccessRate = Number(stats?.success_rate ?? stats?.successRate ?? 0);
   const displaySuccessRate = Number.isNaN(rawSuccessRate) ? '0.0' : rawSuccessRate.toFixed(1);
-  const avgTime = Number(
-    stats?.avg_execution_time_ms ?? stats?.avg_execution_time ?? stats?.avgExecutionTime ?? 0
-  );
 
   const dailySlug = daily?.title_slug || daily?.slug;
 
@@ -107,26 +101,14 @@ export default function Dashboard() {
         <div className="hero-content">
           <div>
             <h1 id="hero-title" className="hero-title">
-              Autonomous <span className="gradient-text">LeetCode Solver</span>
+              Autonomous <span className="text-accent">LeetCode Solver</span>
             </h1>
             <p className="hero-sub">
-              Ultra-lightweight Rust-native backend with a modern React control center. Solutions
-              are synced from leading open-source archives and submitted to LeetCode
-              automatically — every day, on schedule.
+              Solves today's LeetCode challenge automatically, every day.
             </p>
-            <div className="hero-stats-inline">
-              <span className="hero-chip">
-                <Flame size={13} /> Daily cron 10:00 UTC
-              </span>
-              <span className="hero-chip">
-                <Zap size={13} /> 3,500+ problems covered
-              </span>
-              <span className="hero-chip">
-                <Timer size={13} /> &lt; 15 MB memory
-              </span>
-            </div>
           </div>
           <div className="hero-actions">
+            <NextSolveCountdown />
             <button
               type="button"
               className="btn btn-primary btn-lg"
@@ -134,54 +116,41 @@ export default function Dashboard() {
               disabled={solvingDaily}
             >
               <Zap size={18} />
-              <span>{solvingDaily ? 'Solving in progress…' : "Solve Today's Problem"}</span>
+              <span>{solvingDaily ? 'Solving…' : 'Solve Now'}</span>
             </button>
             <button
               type="button"
               className="btn btn-secondary btn-lg"
               onClick={fetchDashboardData}
               disabled={loading}
+              aria-label="Refresh dashboard"
             >
               <RotateCw size={18} className={cn(loading && 'animate-spin')} />
-              <span>Refresh</span>
             </button>
           </div>
         </div>
       </section>
 
-      {/* Live Indian Time & LeetCode Reset Timer */}
-      <IndianTimerCard />
-
       {/* Metrics */}
       <section className="stats-grid" aria-label="Performance metrics">
         <StatCard
-          label="Total Submissions"
+          label="Total"
           value={loading ? '—' : totalSubmissions}
-          sub="All recorded attempts"
           icon={BarChart2}
-          accent="violet"
+          accent="neutral"
         />
         <StatCard
-          label="Accepted Solutions"
+          label="Accepted"
           value={loading ? '—' : acceptedSubmissions}
-          sub="Verified on LeetCode"
           icon={CheckCircle2}
           accent="green"
         />
         <StatCard
-          label="Success Rate"
+          label="Rate"
           value={loading ? '—' : `${displaySuccessRate}%`}
-          sub="Acceptance ratio"
           icon={Target}
-          accent="purple"
-          progress={Number(displaySuccessRate)}
-        />
-        <StatCard
-          label="Avg Pipeline Time"
-          value={loading ? '—' : avgTime > 0 ? `${avgTime} ms` : 'N/A'}
-          sub="Fetch to submit duration"
-          icon={Clock}
           accent="amber"
+          progress={Number(displaySuccessRate)}
         />
       </section>
 
@@ -221,7 +190,7 @@ export default function Dashboard() {
             ) : daily ? (
               <div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                  <span className="mono" style={{ color: '#a78bfa', fontWeight: 700, fontSize: '1rem' }}>
+                  <span className="mono" style={{ color: 'var(--accent-strong)', fontWeight: 700, fontSize: '1rem' }}>
                     #{daily.question_frontend_id || daily.frontend_question_id || '---'}
                   </span>
                   <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{daily.title || daily.question_title || 'LeetCode Challenge'}</h3>
@@ -237,13 +206,6 @@ export default function Dashboard() {
                     );
                   })}
                 </div>
-
-                <p style={{ fontSize: '0.86rem', marginBottom: 18 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Scheduled for </span>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                    {daily.date || 'today'}
-                  </span>
-                </p>
 
                 <div className="row">
                   <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/daily')}>
@@ -293,7 +255,7 @@ export default function Dashboard() {
             </button>
           </div>
           <div style={{ padding: 0 }}>
-            <div className="table-responsive">
+            <div className="table-responsive compact-table">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -349,11 +311,18 @@ export default function Dashboard() {
                         <td>
                           <span
                             className={cn(
-                              'badge',
-                              item.status === 'Accepted' ? 'badge-success' : 'badge-danger'
+                              'status-chip',
+                              item.status === 'Accepted'
+                                ? 'success'
+                                : /simulated/i.test(item.status || '')
+                                  ? 'warning'
+                                  : 'danger'
                             )}
+                            title={item.status}
                           >
-                            {item.status}
+                            {item.status && item.status.length > 16
+                              ? item.status.split(' (')[0]
+                              : item.status}
                           </span>
                         </td>
                         <td className="hide-sm">

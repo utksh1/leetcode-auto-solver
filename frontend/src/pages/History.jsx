@@ -229,15 +229,14 @@ export default function HistoryPage() {
                     <td>
                       <span
                         className={cn(
-                          'badge',
-                          item.status === 'Accepted' ? 'badge-success' : 'badge-danger'
+                          'status-chip',
+                          item.status === 'Accepted'
+                            ? 'success'
+                            : /simulated/i.test(item.status || '')
+                              ? 'warning'
+                              : 'danger'
                         )}
                       >
-                        {item.status === 'Accepted' ? (
-                          <CheckCircle2 size={11} />
-                        ) : (
-                          <XCircle size={11} />
-                        )}
                         {item.status}
                       </span>
                     </td>

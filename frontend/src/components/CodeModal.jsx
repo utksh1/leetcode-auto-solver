@@ -51,15 +51,30 @@ export default function CodeModal({ isOpen, onClose, title, code, language }) {
         <div className="modal-header">
           <div className="modal-title-group">
             <h3 className="modal-title">{title || 'Submission Code'}</h3>
-            {language && (
-              <span className="badge badge-accent" style={{ marginTop: 4 }}>
-                {language}
-              </span>
-            )}
+            {language && <span className="modal-lang-badge">{language}</span>}
           </div>
-          <button ref={closeRef} type="button" className="modal-close" onClick={onClose} aria-label="Close dialog">
-            <X size={18} />
-          </button>
+          <div className="modal-header-actions">
+            {code && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleCopy}
+                title="Copy code to clipboard"
+                aria-label="Copy code to clipboard"
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+              </button>
+            )}
+            <button
+              ref={closeRef}
+              type="button"
+              className="modal-close"
+              onClick={onClose}
+              aria-label="Close dialog"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="modal-body">

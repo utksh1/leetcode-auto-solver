@@ -15,9 +15,9 @@ export default function ResultPanel({ result, pipelineMs }) {
     <div className={`result-panel ${success ? 'success' : 'error'}`} role="status">
       <div className="result-head">
         {success ? (
-          <CheckCircle2 size={19} color="#34d399" />
+          <CheckCircle2 size={19} color="var(--success-text)" />
         ) : (
-          <XCircle size={19} color="#fb7185" />
+          <XCircle size={19} color="var(--danger-text)" />
         )}
         <span className="result-title">{status}</span>
       </div>

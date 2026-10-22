@@ -15,17 +15,19 @@ function AppShell() {
   return (
     <div className="app-container">
       <Navbar />
-      <main className="main-content" key={location.pathname}>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/daily" element={<DailyChallenge />} />
-          <Route path="/solver" element={<ProblemSolver />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </main>
-      <Footer />
+      <div className="app-body">
+        <main className="main-content" key={location.pathname}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/daily" element={<DailyChallenge />} />
+            <Route path="/solver" element={<ProblemSolver />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+        <Footer />
+      </div>
     </div>
   );
 }

@@ -22,14 +22,7 @@ export default function Footer() {
       <div className="footer-inner">
         <span className="footer-brand">
           <Zap size={15} />
-          LeetCode Auto&nbsp;·&nbsp;Rust&nbsp;+&nbsp;React
-        </span>
-        <span>
-          Solutions sourced from the open-source{' '}
-          <a href="https://github.com/doocs/leetcode" target="_blank" rel="noreferrer">
-            doocs/leetcode
-          </a>{' '}
-          archive
+          LeetCode&nbsp;Auto
         </span>
         <nav className="footer-links" aria-label="Footer">
           <a

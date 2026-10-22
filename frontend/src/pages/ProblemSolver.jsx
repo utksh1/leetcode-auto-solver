@@ -1,21 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Search, 
-  Zap, 
+import {
+  Search,
   Play,
-  FileCode, 
-  Copy, 
-  CheckCircle, 
+  Copy,
+  CheckCircle,
   AlertCircle,
-  Sparkles,
   Edit3,
   Eye,
-  Check,
-  X,
-  Terminal,
-  Loader2
+  Loader2,
+  ExternalLink,
+  Code2,
+  ChevronRight,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import CodeBlock from '../components/CodeBlock';
 
 export default function ProblemSolver() {
   const { showToast } = useToast();
@@ -29,8 +27,11 @@ export default function ProblemSolver() {
   const [code, setCode] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [source, setSource] = useState('');
-  const [activeTab, setActiveTab] = useState('code'); // 'code', 'tests', 'problem'
-  
+
+  // LeetCode-style console: 'testcase' | 'result'
+  const [consoleTab, setConsoleTab] = useState('testcase');
+  const [selectedCase, setSelectedCase] = useState(0);
+
   // Test run result state
   const [testResult, setTestResult] = useState(null);
   const [customInput, setCustomInput] = useState('');
@@ -41,7 +42,9 @@ export default function ProblemSolver() {
   // Search suggestions
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
   const searchTimeoutRef = useRef(null);
+  const blurTimeoutRef = useRef(null);
   const searchDropdownRef = useRef(null);
 
   const popularChips = [
@@ -125,6 +128,9 @@ export default function ProblemSolver() {
     setPreviewing(true);
     setSubmitResult(null);
     setTestResult(null);
+    setSelectedCase(0);
+    setConsoleTab('testcase');
+    setIsEditing(false);
     showToast(`Loading problem #${identifier}...`, 'info');
 
     try {
@@ -167,7 +173,7 @@ export default function ProblemSolver() {
     }
 
     setTesting(true);
-    setActiveTab('tests');
+    setConsoleTab('result');
     showToast(`Testing solution against example testcases...`, 'info');
 
     try {
@@ -184,6 +190,7 @@ export default function ProblemSolver() {
 
       const data = await res.json();
       setTestResult(data);
+      setSelectedCase(0);
 
       if (res.ok && data.success) {
         showToast(`All Testcases Passed! (${data.total_correct}/${data.total_testcases})`, 'success');
@@ -208,6 +215,7 @@ export default function ProblemSolver() {
 
     setSubmitting(true);
     setSubmitResult(null);
+    setConsoleTab('result');
     showToast(`Submitting to LeetCode...`, 'info');
 
     try {
@@ -245,6 +253,23 @@ export default function ProblemSolver() {
     showToast('Code copied to clipboard', 'success');
   };
 
+  const handleLanguageChange = (e) => {
+    const next = e.target.value;
+    setLanguage(next);
+    if (problemInfo) {
+      // Refetch code for the new language
+      fetch(`/api/preview/${problemInfo.title_slug}?lang=${next}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.code) setCode(data.code);
+          if (data.source) setSource(data.source);
+        })
+        .catch(() => {
+          /* keep current code on refetch failure */
+        });
+    }
+  };
+
   const getDifficultyClass = (diff) => {
     const d = (diff || '').toLowerCase();
     if (d === 'easy') return 'badge-easy';
@@ -253,85 +278,195 @@ export default function ProblemSolver() {
     return '';
   };
 
-  return (
-    <div>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '2rem' }}>Problem Solver & Test Runner</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>
-          Search by <strong>Problem Number (#1, #42)</strong>, Title, or Slug. Run testcases before official submission.
-        </p>
-      </div>
+  const getDiffTextClass = (diff) => {
+    const d = (diff || '').toLowerCase();
+    if (d === 'easy') return 'd-easy';
+    if (d === 'medium') return 'd-medium';
+    if (d === 'hard') return 'd-hard';
+    return '';
+  };
 
-      {/* Search & Configuration Card */}
-      <div className="card" style={{ marginBottom: '32px' }} ref={searchDropdownRef}>
-        <div className="card-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div className="form-group" style={{ marginBottom: 0, position: 'relative' }}>
-              <label>Problem Number, Title, Slug, or URL</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="e.g. 1, 42, two-sum, or leetcode.com URL"
-                  value={inputSlug}
-                  onChange={(e) => setInputSlug(e.target.value)}
-                  onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+  const isSimulated = (r) => (r?.status || '').startsWith('Simulated');
+  const verdictClass = (r) =>
+    r?.success ? (isSimulated(r) ? 'warning' : 'success') : 'error';
+
+  // Prettify solution source (raw URLs → friendly label)
+  const sourceLabel = source
+    ? source.startsWith('http')
+      ? source.includes('github')
+        ? 'GitHub Archive'
+        : 'External'
+      : source
+    : '';
+
+  // LeetCode HTML injects <p>&nbsp;</p> spacer paragraphs that waste vertical
+  // space in the description pane — strip them (and any blank <p><br></p>).
+  const cleanDescription = (html) =>
+    (html || '')
+      .replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '')
+      .replace(/(?:\s|&nbsp;|<br\s*\/?>)*$/i, '');
+
+  const hasWorkspace = Boolean(code || problemInfo || submitResult || testResult);
+  const problemId = problemInfo
+    ? problemInfo.frontend_question_id || problemInfo.question_frontend_id
+    : null;
+  const problemTitle = problemInfo
+    ? problemInfo.question_title || problemInfo.title
+    : null;
+  const problemUrl = problemInfo
+    ? `https://leetcode.com/problems/${problemInfo.title_slug}/`
+    : null;
+  const topics = Array.isArray(problemInfo?.topic_tags) ? problemInfo.topic_tags : [];
+
+  return (
+    <div className="solver-page">
+      <h1 className="sr-only">Problem Solver</h1>
+
+      {/* ── Problem picker toolbar ───────────────────────────────────────── */}
+      <div className="solver-toolbar" ref={searchDropdownRef}>
+        <div className="solver-toolbar-search">
+          <Search size={15} className="solver-search-icon" aria-hidden="true" />
+          <input
+            type="text"
+            className="form-input solver-search-input"
+            placeholder="Search problems — 1, two-sum, or a leetcode.com URL"
+            aria-label="Search problems by number, title, slug, or URL"
+            value={inputSlug}
+            onChange={(e) => setInputSlug(e.target.value)}
+            onFocus={() => {
+              clearTimeout(blurTimeoutRef.current);
+              setSearchFocused(true);
+              if (suggestions.length > 0) setShowSuggestions(true);
+            }}
+            onBlur={() => {
+              // Delay so suggestion clicks (mousedown → blur → click) still land
+              blurTimeoutRef.current = setTimeout(() => setSearchFocused(false), 150);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setShowSuggestions(false);
+                handleInspect();
+              } else if (e.key === 'Escape') {
+                setShowSuggestions(false);
+              }
+            }}
+          />
+
+          {/* Autocomplete suggestions */}
+          {showSuggestions && suggestions.length > 0 && searchFocused && (
+            <div className="search-dropdown" role="listbox" aria-label="Problem suggestions">
+              {suggestions.map((item) => (
+                <div
+                  key={item.title_slug}
+                  className="search-dropdown-item"
+                  role="option"
+                  aria-selected="false"
+                  tabIndex={0}
+                  onClick={() => {
+                    setInputSlug(item.question_frontend_id);
+                    handleInspect(item.title_slug);
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      setShowSuggestions(false);
-                      handleInspect();
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setInputSlug(item.question_frontend_id);
+                      handleInspect(item.title_slug);
                     }
                   }}
-                />
-              </div>
-
-              {/* Autocomplete Suggestions Dropdown */}
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="search-dropdown">
-                  {suggestions.map((item) => (
-                    <div
-                      key={item.title_slug}
-                      className="search-dropdown-item"
-                      onClick={() => {
-                        setInputSlug(item.question_frontend_id);
-                        handleInspect(item.title_slug);
-                      }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <span className="search-id">#{item.question_frontend_id}</span>
+                    <span
+                      className="search-title"
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 700, color: '#818cf8', minWidth: '40px' }}>
-                          #{item.question_frontend_id}
-                        </span>
-                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                          {item.title}
-                        </span>
-                      </div>
-                      <span className={`badge ${getDifficultyClass(item.difficulty)}`} style={{ fontSize: '0.75rem' }}>
-                        {item.difficulty}
-                      </span>
-                    </div>
-                  ))}
+                      {item.title}
+                    </span>
+                  </div>
+                  <span className={`badge ${getDifficultyClass(item.difficulty)}`} style={{ fontSize: '0.75rem' }}>
+                    {item.difficulty}
+                  </span>
                 </div>
-              )}
+              ))}
             </div>
+          )}
+        </div>
 
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Language</label>
+        <button
+          className="btn btn-primary solver-load-btn"
+          onClick={() => handleInspect()}
+          disabled={previewing || submitting || testing}
+        >
+          {previewing ? <Loader2 size={15} className="animate-spin" /> : <ChevronRight size={15} />}
+          <span>{previewing ? 'Loading…' : 'Load'}</span>
+        </button>
+      </div>
+
+      {/* ── Workspace ────────────────────────────────────────────────────── */}
+      {hasWorkspace ? (
+        <div className="lc-split">
+          {/* LEFT — problem description */}
+          <section className="lc-pane lc-pane--desc" aria-label="Problem description">
+            {problemInfo ? (
+              <>
+                <header className="lc-desc-head">
+                  <div className="lc-desc-title-row">
+                    <h2 className="lc-problem-title">
+                      {problemId}. {problemTitle}
+                    </h2>
+                    <span className={`lc-diff ${getDiffTextClass(problemInfo.difficulty)}`}>
+                      {problemInfo.difficulty}
+                    </span>
+                    <a
+                      className="lc-ext-link"
+                      href={problemUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open on LeetCode"
+                      aria-label="Open problem on LeetCode"
+                    >
+                      <ExternalLink size={13} />
+                    </a>
+                  </div>
+                </header>
+
+                <div
+                  className="lc-desc-body markdown-body"
+                  dangerouslySetInnerHTML={{
+                    __html:
+                      cleanDescription(problemInfo.content || problemInfo.question_content) ||
+                      '<p>No description available.</p>',
+                  }}
+                />
+
+                {topics.length > 0 && (
+                  <footer className="lc-desc-topics">
+                    <span className="lc-topics-label">Related Topics</span>
+                    <div className="lc-tag-row">
+                      {topics.map((tag) => (
+                        <span key={tag} className="lc-tag-chip">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </footer>
+                )}
+              </>
+            ) : (
+              <div className="lc-desc-placeholder">
+                <p>Problem description unavailable — the solution archive was loaded instead.</p>
+              </div>
+            )}
+          </section>
+
+          {/* RIGHT — code workspace */}
+          <section className="lc-pane lc-pane--code" aria-label="Solution workspace">
+            <div className="lc-editorbar">
               <select
+                className="lc-lang-select"
                 value={language}
-                onChange={(e) => {
-                  setLanguage(e.target.value);
-                  if (problemInfo) {
-                    // Refetch code for new language
-                    fetch(`/api/preview/${problemInfo.title_slug}?lang=${e.target.value}`)
-                      .then((r) => r.json())
-                      .then((data) => {
-                        if (data.code) setCode(data.code);
-                        if (data.source) setSource(data.source);
-                      });
-                  }
-                }}
-                className="form-select"
-                style={{ minWidth: '140px' }}
+                onChange={handleLanguageChange}
+                aria-label="Solution language"
               >
                 <option value="python3">Python 3</option>
                 <option value="rust">Rust</option>
@@ -340,58 +475,309 @@ export default function ProblemSolver() {
                 <option value="java">Java</option>
                 <option value="cpp">C++</option>
               </select>
+
+              {sourceLabel && (
+                <span className="badge badge-plain lc-source-badge" title={source}>
+                  {sourceLabel}
+                </span>
+              )}
+
+              <div className="lc-editorbar-actions">
+                {isEditing && <span className="lc-editing-chip">Editing</span>}
+                <button
+                  type="button"
+                  className="lc-icon-btn"
+                  onClick={() => setIsEditing((v) => !v)}
+                  aria-pressed={isEditing}
+                  title={isEditing ? 'Switch to view mode' : 'Edit code'}
+                  disabled={!code}
+                >
+                  {isEditing ? <Eye size={14} /> : <Edit3 size={14} />}
+                </button>
+                <button
+                  type="button"
+                  className="lc-icon-btn"
+                  onClick={handleCopyCode}
+                  title="Copy code"
+                  aria-label="Copy code"
+                  disabled={!code}
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '26px' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => handleInspect()}
-                disabled={previewing || submitting || testing}
-                title="Search and load solution"
-              >
-                {previewing ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                <span>{previewing ? 'Loading...' : 'Inspect'}</span>
-              </button>
-              
-              <button
-                className="btn btn-secondary"
-                style={{ background: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.4)', color: '#a5b4fc' }}
-                onClick={handleRunTests}
-                disabled={previewing || submitting || testing || !code}
-                title="Run testcases on LeetCode without submitting"
-              >
-                {testing ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                <span>{testing ? 'Testing...' : 'Run Tests'}</span>
-              </button>
-
-              <button
-                className="btn btn-primary"
-                onClick={handleSubmit}
-                disabled={previewing || submitting || testing || !code}
-                title="Submit solution to LeetCode"
-              >
-                {submitting ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                <span>{submitting ? 'Submitting...' : 'Submit'}</span>
-              </button>
+            <div className={`lc-editor-wrap${isEditing ? ' editing' : ''}`}>
+              {isEditing ? (
+                <textarea
+                  className="code-editor-textarea"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  spellCheck={false}
+                  aria-label="Solution code editor"
+                />
+              ) : (
+                <CodeBlock code={code} language={language} maxHeight="none" showLineNumbers />
+              )}
             </div>
-          </div>
 
-          {/* Quick Problem Suggestion Chips */}
-          <div style={{ marginTop: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <Sparkles size={14} color="#818cf8" />
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>POPULAR PROBLEMS</span>
+            <div className="lc-console">
+              <div className="lc-console-bar">
+                <div className="lc-console-tabs" role="tablist" aria-label="Console panels">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={consoleTab === 'testcase'}
+                    className={`lc-console-tab${consoleTab === 'testcase' ? ' active' : ''}`}
+                    onClick={() => setConsoleTab('testcase')}
+                  >
+                    Testcase
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={consoleTab === 'result'}
+                    className={`lc-console-tab${consoleTab === 'result' ? ' active' : ''}`}
+                    onClick={() => setConsoleTab('result')}
+                  >
+                    Result
+                    {(testing || submitting) && (
+                      <Loader2 size={12} className="animate-spin lc-tab-spin" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+
+                <div className="lc-console-actions">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleRunTests}
+                    disabled={previewing || submitting || testing || !code}
+                    title="Run testcases on LeetCode without submitting"
+                  >
+                    {testing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                    <span>{testing ? 'Running…' : 'Run'}</span>
+                  </button>
+
+                  <button
+                    className="btn btn-submit btn-sm"
+                    onClick={handleSubmit}
+                    disabled={previewing || submitting || testing || !code}
+                    title="Submit solution to LeetCode"
+                  >
+                    {submitting ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                    <span>{submitting ? 'Judging…' : 'Submit'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="lc-console-body">
+                {consoleTab === 'testcase' ? (
+                  <div>
+                    <textarea
+                      className="lc-testcase-input"
+                      rows={4}
+                      value={customInput}
+                      onChange={(e) => setCustomInput(e.target.value)}
+                      placeholder={'nums = [2,7,11,15]\ntarget = 9'}
+                      aria-label="Testcase input"
+                    />
+                    <p className="lc-testcase-hint">
+                      One line per argument, in parameter order. Samples are pre-filled when a
+                      problem loads.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="lc-result-view">
+                    {/* Judging in progress */}
+                    {(testing || submitting) && (
+                      <div className="lc-pending" role="status" aria-live="polite">
+                        <Loader2 size={15} className="animate-spin" />
+                        <span>Judging…</span>
+                      </div>
+                    )}
+
+                    {/* Idle placeholder */}
+                    {!testing && !submitting && !submitResult && !testResult && (
+                      <p className="lc-result-placeholder">
+                        Press <span className="lc-kbd">Run</span> to test against the sample cases,
+                        or <span className="lc-kbd">Submit</span> for the official LeetCode verdict.
+                      </p>
+                    )}
+
+                    {/* Official submission verdict */}
+                    {!submitting && submitResult && (
+                      <div className="lc-submission">
+                        <div className={`lc-verdict ${verdictClass(submitResult)}`}>
+                          {submitResult.success ? (
+                            <CheckCircle size={16} />
+                          ) : (
+                            <AlertCircle size={16} />
+                          )}
+                          <span>
+                            {submitResult.status ||
+                              (submitResult.success ? 'Accepted' : 'Submission Failed')}
+                          </span>
+                        </div>
+
+                        {(submitResult.runtime || submitResult.memory) && (
+                          <div className="lc-verdict-metrics">
+                            {submitResult.runtime && (
+                              <span className="result-metric">
+                                Runtime <strong>{submitResult.runtime}</strong>
+                              </span>
+                            )}
+                            {submitResult.memory && (
+                              <span className="result-metric">
+                                Memory <strong>{submitResult.memory}</strong>
+                              </span>
+                            )}
+                            <span className="result-metric">
+                              Pipeline <strong>{submitResult.execution_time_ms} ms</strong>
+                            </span>
+                          </div>
+                        )}
+
+                        {submitResult.error &&
+                          (isSimulated(submitResult) ? (
+                            <p className="lc-sim-note">{submitResult.error}</p>
+                          ) : (
+                            <pre className="result-error">{submitResult.error}</pre>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* Test run results */}
+                    {!testing && testResult && (
+                      <div className="lc-testrun">
+                        <div className={`lc-verdict ${testResult.success ? 'success' : 'error'}`}>
+                          {testResult.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                          <span>
+                            {testResult.status_msg ||
+                              testResult.status ||
+                              (testResult.success ? 'Accepted' : 'Failed')}
+                          </span>
+                        </div>
+
+                        {testResult.total_testcases ? (
+                          <p className="lc-cases-count">
+                            <strong>{testResult.total_correct}</strong> / {testResult.total_testcases}{' '}
+                            cases passed
+                          </p>
+                        ) : null}
+
+                        {testResult.compile_error && (
+                          <pre className="result-error">{testResult.compile_error}</pre>
+                        )}
+                        {testResult.runtime_error && (
+                          <pre className="result-error">{testResult.runtime_error}</pre>
+                        )}
+
+                        {Array.isArray(testResult.code_answer) &&
+                          testResult.code_answer.length > 0 && (
+                            <>
+                              {customInput && customInput.trim() && (
+                                <div className="lc-io-section">
+                                  <div className="io-label">Input</div>
+                                  <pre className="io-block">{customInput}</pre>
+                                </div>
+                              )}
+
+                              <div
+                                className="lc-case-chips"
+                                role="tablist"
+                                aria-label="Test cases"
+                              >
+                                {testResult.code_answer.map((ans, idx) => {
+                                  const expected = testResult.expected_code_answer
+                                    ? testResult.expected_code_answer[idx]
+                                    : null;
+                                  const isMatch = expected ? ans === expected : true;
+                                  return (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      role="tab"
+                                      aria-selected={selectedCase === idx}
+                                      className={`lc-case-chip${selectedCase === idx ? ' active' : ''}`}
+                                      onClick={() => setSelectedCase(idx)}
+                                    >
+                                      <span
+                                        className={`chip-dot ${isMatch ? 'pass' : 'fail'}`}
+                                        aria-hidden="true"
+                                      />
+                                      Case {idx + 1}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {(() => {
+                                const idx = Math.min(
+                                  selectedCase,
+                                  testResult.code_answer.length - 1
+                                );
+                                const ans = testResult.code_answer[idx];
+                                const expected = testResult.expected_code_answer
+                                  ? testResult.expected_code_answer[idx]
+                                  : null;
+                                const isMatch = expected ? ans === expected : true;
+                                const stdout = testResult.std_output_list
+                                  ? testResult.std_output_list[idx]
+                                  : null;
+
+                                return (
+                                  <div>
+                                    <div className="lc-io-grid">
+                                      <div>
+                                        <div className="io-label">Your output</div>
+                                        <pre className={`io-block ${isMatch ? 'pass' : 'fail'}`}>
+                                          {ans || 'null'}
+                                        </pre>
+                                      </div>
+                                      {expected && (
+                                        <div>
+                                          <div className="io-label">Expected</div>
+                                          <pre className="io-block expected">{expected}</pre>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {stdout && stdout.trim() ? (
+                                      <div className="lc-io-section">
+                                        <div className="io-label">Stdout</div>
+                                        <pre className="io-block stdout">{stdout}</pre>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })()}
+                            </>
+                          )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          </section>
+        </div>
+      ) : (
+        /* Empty state — nothing loaded yet */
+        <div className="lc-split lc-split-empty">
+          <div className="lc-empty">
+            <div className="lc-empty-icon" aria-hidden="true">
+              <Code2 size={22} />
+            </div>
+            <h2>Load a problem to get started</h2>
+            <p>
+              Search by problem number (<strong>#1</strong>, <strong>#42</strong>), title, slug, or
+              paste a leetcode.com URL — then run testcases and submit, right from here.
+            </p>
+            <div className="lc-empty-chips">
               {popularChips.map((chip) => (
                 <button
                   key={chip.slug}
-                  className="btn btn-ghost btn-sm"
-                  style={{
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: '0.8rem',
-                  }}
+                  className="btn btn-secondary btn-sm"
                   onClick={() => {
                     setInputSlug(chip.id);
                     handleInspect(chip.slug);
@@ -401,285 +787,9 @@ export default function ProblemSolver() {
                 </button>
               ))}
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Solver Workspace */}
-      {(code || problemInfo || submitResult || testResult) && (
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FileCode size={20} color="#818cf8" />
-                <h2>
-                  {problemInfo
-                    ? `#${problemInfo.frontend_question_id || problemInfo.question_frontend_id} ${problemInfo.question_title || problemInfo.title}`
-                    : inputSlug}
-                </h2>
-                {problemInfo && (
-                  <span className={`badge ${getDifficultyClass(problemInfo.difficulty)}`}>
-                    {problemInfo.difficulty}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              {source && (
-                <span className="badge" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                  {source}
-                </span>
-              )}
-              <button 
-                className="btn btn-secondary btn-sm"
-                onClick={() => setIsEditing(!isEditing)}
-              >
-                {isEditing ? <Eye size={14} /> : <Edit3 size={14} />}
-                <span>{isEditing ? 'View Mode' : 'Edit Code'}</span>
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={handleCopyCode}>
-                <Copy size={14} />
-                <span>Copy</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Navigation Tabs */}
-          <div className="tab-nav">
-            <button
-              className={`tab-btn ${activeTab === 'code' ? 'active' : ''}`}
-              onClick={() => setActiveTab('code')}
-            >
-              <FileCode size={15} />
-              <span>Solution Code ({language})</span>
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'tests' ? 'active' : ''}`}
-              onClick={() => setActiveTab('tests')}
-            >
-              <Terminal size={15} />
-              <span>Test Cases & Output {testResult ? (testResult.success ? '✅' : '⚠️') : ''}</span>
-            </button>
-            {problemInfo && problemInfo.content && (
-              <button
-                className={`tab-btn ${activeTab === 'problem' ? 'active' : ''}`}
-                onClick={() => setActiveTab('problem')}
-              >
-                <Sparkles size={15} />
-                <span>Problem Statement</span>
-              </button>
-            )}
-          </div>
-
-          <div className="card-body">
-            {/* LeetCode Official Submission Result Banner */}
-            {submitResult && (
-              <div
-                style={{
-                  padding: '16px',
-                  borderRadius: 'var(--radius-md)',
-                  marginBottom: '20px',
-                  background: submitResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                  border: `1px solid ${submitResult.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  {submitResult.success ? (
-                    <CheckCircle size={18} color="var(--success)" />
-                  ) : (
-                    <AlertCircle size={18} color="var(--danger)" />
-                  )}
-                  <strong style={{ color: submitResult.success ? 'var(--success)' : 'var(--danger)' }}>
-                    Submission Status: {submitResult.status || (submitResult.success ? 'Success' : 'Failed')}
-                  </strong>
-                </div>
-                {submitResult.runtime && (
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    Runtime: <span style={{ color: '#fff' }}>{submitResult.runtime}</span> | Memory:{' '}
-                    <span style={{ color: '#fff' }}>{submitResult.memory}</span> | Time: {submitResult.execution_time_ms}ms
-                  </div>
-                )}
-                {submitResult.error && (
-                  <div style={{ fontSize: '0.85rem', color: '#fca5a5', marginTop: '4px' }}>
-                    {submitResult.error}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB 1: CODE EDITOR & VIEWER */}
-            {activeTab === 'code' && (
-              <div>
-                {isEditing ? (
-                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        Editing code before test / submit
-                      </span>
-                      <button className="btn btn-ghost btn-sm" onClick={() => setIsEditing(false)}>
-                        Done Editing
-                      </button>
-                    </div>
-                    <textarea
-                      className="code-editor-textarea"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      spellCheck={false}
-                    />
-                  </div>
-                ) : (
-                  <div className="code-container">
-                    <pre>
-                      <code>{code}</code>
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB 2: TESTCASES & RUN RESULTS */}
-            {activeTab === 'tests' && (
-              <div>
-                {/* Test Run Execution Result Card */}
-                {testResult ? (
-                  <div
-                    style={{
-                      padding: '16px',
-                      borderRadius: 'var(--radius-md)',
-                      marginBottom: '20px',
-                      background: testResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                      border: `1px solid ${testResult.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {testResult.success ? (
-                          <CheckCircle size={20} color="var(--success)" />
-                        ) : (
-                          <AlertCircle size={20} color="var(--danger)" />
-                        )}
-                        <span style={{ fontSize: '1.1rem', fontWeight: 700, color: testResult.success ? 'var(--success)' : 'var(--danger)' }}>
-                          {testResult.status_msg || (testResult.success ? 'Accepted' : 'Failed')}
-                        </span>
-                      </div>
-                      {testResult.total_testcases && (
-                        <span className="badge" style={{ background: testResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)' }}>
-                          {testResult.total_correct} / {testResult.total_testcases} Testcases Passed
-                        </span>
-                      )}
-                    </div>
-
-                    {testResult.runtime && (
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                        Runtime: <strong style={{ color: '#fff' }}>{testResult.runtime}</strong> | Memory: <strong style={{ color: '#fff' }}>{testResult.memory}</strong>
-                      </div>
-                    )}
-
-                    {testResult.compile_error && (
-                      <div style={{ background: 'rgba(0,0,0,0.4)', padding: '12px', borderRadius: 'var(--radius-sm)', color: '#fca5a5', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>
-                        {testResult.compile_error}
-                      </div>
-                    )}
-
-                    {testResult.runtime_error && (
-                      <div style={{ background: 'rgba(0,0,0,0.4)', padding: '12px', borderRadius: 'var(--radius-sm)', color: '#fca5a5', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>
-                        {testResult.runtime_error}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', marginBottom: '20px' }}>
-                    <p style={{ color: 'var(--text-muted)' }}>
-                      Click <strong>"Run Tests"</strong> above to execute this solution against LeetCode testcases.
-                    </p>
-                  </div>
-                )}
-
-                {/* Individual Testcases Breakdown */}
-                {testResult && testResult.code_answer && testResult.code_answer.length > 0 && (
-                  <div style={{ marginBottom: '24px' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '12px' }}>Testcase Outputs</h3>
-                    {testResult.code_answer.map((ans, idx) => {
-                      const expected = testResult.expected_code_answer ? testResult.expected_code_answer[idx] : null;
-                      const isMatch = expected ? ans === expected : true;
-                      const stdout = testResult.std_output_list ? testResult.std_output_list[idx] : null;
-
-                      return (
-                        <div key={idx} className={`testcase-item ${isMatch ? 'pass' : 'fail'}`}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Case {idx + 1}</span>
-                            <span className={`badge ${isMatch ? 'badge-easy' : 'badge-hard'}`}>
-                              {isMatch ? <Check size={12} style={{ display: 'inline', marginRight: '4px' }} /> : <X size={12} style={{ display: 'inline', marginRight: '4px' }} />}
-                              {isMatch ? 'Passed' : 'Mismatch'}
-                            </span>
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '8px' }}>
-                            <div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>YOUR OUTPUT</div>
-                              <pre style={{ background: '#0b0f19', padding: '8px 12px', borderRadius: '4px', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: isMatch ? '#34d399' : '#f87171' }}>
-                                {ans || 'null'}
-                              </pre>
-                            </div>
-
-                            {expected && (
-                              <div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>EXPECTED OUTPUT</div>
-                                <pre style={{ background: '#0b0f19', padding: '8px 12px', borderRadius: '4px', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#38bdf8' }}>
-                                  {expected}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-
-                          {stdout && stdout.trim() && (
-                            <div style={{ marginTop: '8px' }}>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>STDOUT</div>
-                              <pre style={{ background: '#05070c', padding: '8px 12px', borderRadius: '4px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: '#94a3b8' }}>
-                                {stdout}
-                              </pre>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Custom Testcase Input Area */}
-                <div>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
-                    Testcase Input (Sample or Custom)
-                  </label>
-                  <textarea
-                    className="form-input"
-                    rows={4}
-                    style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', resize: 'vertical' }}
-                    value={customInput}
-                    onChange={(e) => setCustomInput(e.target.value)}
-                    placeholder="Enter testcase inputs here, each line matching parameter order"
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={handleRunTests}
-                      disabled={testing || !code}
-                    >
-                      <Play size={13} />
-                      <span>{testing ? 'Testing...' : 'Run with this input'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: PROBLEM STATEMENT */}
-            {activeTab === 'problem' && problemInfo && (
-              <div 
-                className="markdown-body"
-                dangerouslySetInnerHTML={{ __html: problemInfo.content || problemInfo.question_content || '<p>No description available.</p>' }}
-              />
-            )}
+            <p className="lc-empty-hint">
+              Press <span className="lc-kbd">Enter</span> in the search box to load
+            </p>
           </div>
         </div>
       )}

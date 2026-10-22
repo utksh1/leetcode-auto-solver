@@ -5,6 +5,7 @@ mod leetcode;
 mod solution;
 
 use axum::{
+    response::IntoResponse,
     routing::{get, post},
     Router,
 };
@@ -219,6 +220,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/solve", post(solve_handler))
         .route("/api/session/status", get(get_session_status_handler))
         .route("/api/session", post(save_session_handler))
+        .route("/favicon.svg", get(static_root_file_handler))
+        .route("/icons.svg", get(static_root_file_handler))
         .nest_service("/assets", ServeDir::new("public/assets"))
         .fallback(spa_fallback)
         .layer(CorsLayer::permissive())
@@ -242,5 +245,29 @@ async fn spa_fallback() -> (axum::http::StatusCode, axum::response::Html<String>
             axum::http::StatusCode::NOT_FOUND,
             axum::response::Html("<h1>Index file not found</h1>".to_string()),
         ),
+    }
+}
+
+/// Serve root-level static files (favicon.svg, icons.svg) with correct MIME type.
+/// Without this, requests fell through to the SPA HTML fallback and the browser
+/// could not render the tab icon.
+async fn static_root_file_handler(req: axum::extract::Request) -> impl IntoResponse {
+    let name = req.uri().path().trim_start_matches('/');
+    let file_path = match name {
+        "favicon.svg" => "public/favicon.svg",
+        "icons.svg" => "public/icons.svg",
+        _ => return axum::http::StatusCode::NOT_FOUND.into_response(),
+    };
+    serve_public_file(file_path).await
+}
+
+async fn serve_public_file(path: &str) -> axum::response::Response {
+    match tokio::fs::read(path).await {
+        Ok(bytes) => (
+            [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
     }
 }
