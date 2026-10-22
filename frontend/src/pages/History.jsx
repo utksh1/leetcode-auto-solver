@@ -86,8 +86,8 @@ export default function HistoryPage() {
       </div>
 
       {/* Filters */}
-      <div className="card" style={{ marginBottom: 24 }}>
-        <div className="card-body" style={{ padding: '16px 20px' }}>
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="card-body" style={{ padding: '12px 16px' }}>
           <div className="history-filter-grid">
             <div className="input-icon-wrap">
               <span className="input-icon">
@@ -109,7 +109,7 @@ export default function HistoryPage() {
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="form-select"
-                style={{ minWidth: 130, padding: '9px 36px 9px 12px' }}
+                style={{ minWidth: 130, padding: '7px 32px 7px 10px' }}
                 aria-label="Filter by status"
               >
                 <option value="ALL">All Status</option>
@@ -124,7 +124,7 @@ export default function HistoryPage() {
                 value={diffFilter}
                 onChange={(e) => setDiffFilter(e.target.value)}
                 className="form-select"
-                style={{ minWidth: 122, padding: '9px 36px 9px 12px' }}
+                style={{ minWidth: 122, padding: '7px 32px 7px 10px' }}
                 aria-label="Filter by difficulty"
               >
                 <option value="ALL">All Levels</option>
@@ -136,7 +136,7 @@ export default function HistoryPage() {
           </div>
 
           {history && (
-            <div className="row" style={{ marginTop: 12, gap: 8 }}>
+            <div className="row" style={{ marginTop: 10, gap: 8 }}>
               <span className="badge badge-accent">
                 <ListFilter size={11} />
                 {filteredHistory.length} of {history.length} records

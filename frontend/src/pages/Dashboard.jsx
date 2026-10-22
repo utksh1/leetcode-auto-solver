@@ -111,21 +111,21 @@ export default function Dashboard() {
             <NextSolveCountdown />
             <button
               type="button"
-              className="btn btn-primary btn-lg"
+              className="btn btn-primary"
               onClick={handleQuickSolveDaily}
               disabled={solvingDaily}
             >
-              <Zap size={18} />
+              <Zap size={16} />
               <span>{solvingDaily ? 'Solving…' : 'Solve Now'}</span>
             </button>
             <button
               type="button"
-              className="btn btn-secondary btn-lg"
+              className="btn btn-secondary btn-icon"
               onClick={fetchDashboardData}
               disabled={loading}
               aria-label="Refresh dashboard"
             >
-              <RotateCw size={18} className={cn(loading && 'animate-spin')} />
+              <RotateCw size={16} className={cn(loading && 'animate-spin')} />
             </button>
           </div>
         </div>
