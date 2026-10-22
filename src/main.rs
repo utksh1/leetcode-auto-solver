@@ -3,8 +3,10 @@ mod database;
 mod handlers;
 mod leetcode;
 mod solution;
+mod system;
 
 use axum::{
+    middleware::Next,
     response::IntoResponse,
     routing::{get, post},
     Router,
@@ -20,14 +22,17 @@ use crate::config::AppConfig;
 use crate::database::{Database, SubmissionRecord};
 use crate::handlers::{
     get_daily_handler, get_history_handler, get_problem_handler, get_session_status_handler,
-    get_stats_handler, health_handler, preview_solution_handler, save_session_handler,
-    search_problems_handler, solve_handler, test_solution_handler, AppState,
+    get_stats_handler, get_system_handler, health_handler, preview_solution_handler,
+    save_session_handler, search_problems_handler, solve_handler, test_solution_handler, AppState,
 };
 use crate::leetcode::LeetCodeClient;
 use crate::solution::SolutionFetcher;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Record process start for the realtime /api/system uptime metric
+    system::init();
+
     // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -142,6 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let st = job_state.clone();
                 Box::pin(async move {
                     println!("🕐 [CRON] Starting scheduled daily problem solver run...");
+                    system::mark_cron_run();
                     let start_time = std::time::Instant::now();
                     let today_date = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
@@ -220,11 +226,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/solve", post(solve_handler))
         .route("/api/session/status", get(get_session_status_handler))
         .route("/api/session", post(save_session_handler))
+        .route("/api/system", get(get_system_handler))
         .route("/favicon.svg", get(static_root_file_handler))
         .route("/icons.svg", get(static_root_file_handler))
         .nest_service("/assets", ServeDir::new("public/assets"))
         .fallback(spa_fallback)
         .layer(CorsLayer::permissive())
+        .layer(axum::middleware::from_fn(count_requests))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -236,6 +244,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// Request-counting middleware feeding the realtime "Requests Served" metric.
+async fn count_requests(
+    req: axum::extract::Request,
+    next: Next,
+) -> axum::response::Response {
+    system::bump_requests();
+    next.run(req).await
 }
 
 async fn spa_fallback() -> (axum::http::StatusCode, axum::response::Html<String>) {

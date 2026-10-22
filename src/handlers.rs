@@ -12,6 +12,7 @@ use crate::config::AppConfig;
 use crate::database::{Database, SubmissionRecord};
 use crate::leetcode::LeetCodeClient;
 use crate::solution::SolutionFetcher;
+use crate::system;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -78,6 +79,12 @@ pub async fn health_handler() -> impl IntoResponse {
         "service": "leetcode-auto-solver",
         "timestamp": chrono::Utc::now().to_rfc3339()
     }))
+}
+
+/// Realtime system specifications (memory, CPU, uptime, cron countdown,
+/// request counter). Powers the live "System Architecture" monitor in Settings.
+pub async fn get_system_handler(State(state): State<AppState>) -> impl IntoResponse {
+    Json(system::snapshot(&state.db))
 }
 
 pub async fn get_stats_handler(State(state): State<AppState>) -> impl IntoResponse {

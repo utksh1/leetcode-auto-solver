@@ -3341,3 +3341,172 @@ code {
     padding: 6px 10px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   24. System monitor (Settings) — realtime /api/system specs
+   --------------------------------------------------------------------------- */
+.sys-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--success-text);
+  background: var(--success-soft);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.sys-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: sys-pulse 1.6s ease-in-out infinite;
+}
+
+.sys-chip-off {
+  color: var(--danger-text);
+  background: var(--danger-soft);
+  border-color: rgba(244, 63, 94, 0.3);
+}
+
+.sys-chip-off .sys-chip-dot {
+  background: var(--danger);
+  animation: none;
+}
+
+@keyframes sys-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
+  }
+}
+
+.sys-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.sys-tile {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sys-tile-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sys-tile-label svg {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.sys-tile-value {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sys-tile-value small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 1px;
+}
+
+.sys-tile-value-sm {
+  font-size: 14px;
+}
+
+.sys-tile-sub {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sys-bar {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.sys-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--success);
+  transition: width 0.6s var(--ease), background 0.3s;
+}
+
+.sys-bar-fill.warn {
+  background: var(--warning);
+}
+
+.sys-bar-fill.danger {
+  background: var(--danger);
+}
+
+/* Live values can be long — let def rows wrap gracefully */
+.def-row {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.def-value {
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .sys-tiles {
+    gap: 8px;
+  }
+
+  .sys-tile {
+    padding: 9px 10px;
+  }
+
+  .sys-tile-value {
+    font-size: 15px;
+  }
+
+  .sys-tile-value-sm {
+    font-size: 12.5px;
+  }
+
+  .sys-tile-sub {
+    font-size: 10px;
+  }
+}
