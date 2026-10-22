@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Calendar, Terminal, History, Settings, Zap } from 'lucide-react';
+import { CompactIndianTimer } from './IndianTimer';
 
 export default function Navbar() {
   const [authStatus, setAuthStatus] = useState({ checked: false, valid: false, username: null });
@@ -65,21 +66,25 @@ export default function Navbar() {
           </NavLink>
         </nav>
 
-        <div className="nav-status">
-          <span
-            className={`status-indicator ${
-              !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
-            }`}
-          />
-          <span className="status-text" style={{ fontSize: '0.85rem' }}>
-            {!authStatus.checked
-              ? 'Checking session...'
-              : authStatus.valid
-              ? authStatus.username
-                ? `Logged in: ${authStatus.username}`
-                : 'Session Active'
-              : 'No Session Configured'}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <CompactIndianTimer />
+
+          <div className="nav-status">
+            <span
+              className={`status-indicator ${
+                !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
+              }`}
+            />
+            <span className="status-text" style={{ fontSize: '0.85rem' }}>
+              {!authStatus.checked
+                ? 'Checking session...'
+                : authStatus.valid
+                ? authStatus.username
+                  ? `Logged in: ${authStatus.username}`
+                  : 'Session Active'
+                : 'No Session Configured'}
+            </span>
+          </div>
         </div>
       </div>
     </header>

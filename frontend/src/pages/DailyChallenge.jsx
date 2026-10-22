@@ -10,6 +10,7 @@ import {
   Tag
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import IndianTimerCard from '../components/IndianTimer';
 
 export default function DailyChallenge() {
   const { showToast } = useToast();
@@ -148,6 +149,9 @@ export default function DailyChallenge() {
           <span>{solving ? 'Submitting to LeetCode...' : 'Solve & Submit Now'}</span>
         </button>
       </div>
+
+      {/* Indian Standard Time & LeetCode Reset Timer */}
+      <IndianTimerCard />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))', gap: '24px' }}>
         {/* Left Column: Problem Information */}

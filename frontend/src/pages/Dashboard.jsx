@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import CodeModal from '../components/CodeModal';
+import IndianTimerCard from '../components/IndianTimer';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -131,6 +132,9 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Live Indian Time & LeetCode Reset Timer */}
+      <IndianTimerCard />
 
       {/* Metrics Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '32px' }}>
