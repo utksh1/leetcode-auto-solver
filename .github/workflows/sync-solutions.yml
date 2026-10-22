@@ -11,9 +11,9 @@ on:
         required: false
         default: ''
       language:
-        description: 'Programming language (typescript, python3, rust, golang, java, cpp)'
+        description: 'Programming language (python3, rust, typescript, golang, java, cpp)'
         required: false
-        default: 'typescript'
+        default: 'python3'
 
 jobs:
   solve-and-sync:
@@ -44,6 +44,7 @@ jobs:
         env:
           LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
           LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
+          PREFERRED_LANG: python3
           PORT: 3000
         run: |
           if [ -n "${{ github.event.inputs.problem_slug }}" ]; then
