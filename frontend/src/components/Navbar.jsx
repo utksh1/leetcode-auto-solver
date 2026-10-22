@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { CompactIndianTimer } from './IndianTimer';
 
 const NAV_ITEMS = [
   { to: '/', end: true, icon: LayoutDashboard, label: 'Dashboard' },
@@ -106,6 +107,8 @@ export default function Navbar() {
           </nav>
 
           <div className="nav-right">
+            <CompactIndianTimer />
+
             <div
               className="nav-status"
               title={statusTitle}

@@ -22,6 +22,7 @@ import StatCard from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import { Skeleton, SkeletonTableRows } from '../components/Skeleton';
 import { getDifficultyClass, cn } from '../lib/utils';
+import IndianTimerCard from '../components/IndianTimer';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -147,6 +148,9 @@ export default function Dashboard() {
           </div>
         </div>
       </section>
+
+      {/* Live Indian Time & LeetCode Reset Timer */}
+      <IndianTimerCard />
 
       {/* Metrics */}
       <section className="stats-grid" aria-label="Performance metrics">

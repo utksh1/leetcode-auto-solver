@@ -17,6 +17,7 @@ import ResultPanel from '../components/ResultPanel';
 import EmptyState from '../components/EmptyState';
 import { Skeleton } from '../components/Skeleton';
 import { getDifficultyClass, copyToClipboard, cn } from '../lib/utils';
+import IndianTimerCard from '../components/IndianTimer';
 
 export default function DailyChallenge() {
   const { showToast } = useToast();
@@ -161,6 +162,9 @@ export default function DailyChallenge() {
           <span>{solving ? 'Submitting to LeetCode…' : 'Solve & Submit Now'}</span>
         </button>
       </div>
+
+      {/* Indian Standard Time & LeetCode Reset Timer */}
+      <IndianTimerCard />
 
       <div className="grid-2-wide">
         {/* Left: problem statement */}
