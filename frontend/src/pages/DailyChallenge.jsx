@@ -1,20 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  Zap, 
-  RotateCw, 
-  Copy, 
-  ExternalLink, 
-  CheckCircle, 
-  AlertCircle,
-  FileCode,
-  Tag
+import {
+  Zap,
+  RotateCw,
+  Copy,
+  Check,
+  ExternalLink,
+  Calendar,
+  FileCode2,
+  Tag,
+  ListChecks,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import CodeBlock from '../components/CodeBlock';
+import LanguageTabs from '../components/LanguageTabs';
+import ResultPanel from '../components/ResultPanel';
+import EmptyState from '../components/EmptyState';
+import { Skeleton } from '../components/Skeleton';
+import { getDifficultyClass, copyToClipboard, cn } from '../lib/utils';
 
 export default function DailyChallenge() {
   const { showToast } = useToast();
 
   const [daily, setDaily] = useState(null);
+  const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState('python3');
   const [code, setCode] = useState('');
@@ -22,6 +30,7 @@ export default function DailyChallenge() {
   const [fetchingCode, setFetchingCode] = useState(false);
   const [solving, setSolving] = useState(false);
   const [solveResult, setSolveResult] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     fetchDailyQuestion();
@@ -29,6 +38,7 @@ export default function DailyChallenge() {
 
   const fetchDailyQuestion = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const res = await fetch('/api/daily');
       if (res.ok) {
@@ -39,9 +49,11 @@ export default function DailyChallenge() {
           fetchPreviewCode(slug, language);
         }
       } else {
+        setLoadError(true);
         showToast("Failed to fetch today's challenge", 'error');
       }
     } catch (err) {
+      setLoadError(true);
       showToast(`Error: ${err.message}`, 'error');
     } finally {
       setLoading(false);
@@ -54,20 +66,21 @@ export default function DailyChallenge() {
       const res = await fetch(`/api/preview/${slug}?lang=${lang}`);
       if (res.ok) {
         const data = await res.json();
-        setCode(data.code || '// No solution found for this language');
+        setCode(data.code || '');
         setSource(data.source || 'GitHub Archive');
       } else {
-        setCode('// Failed to preview solution from archive');
+        setCode('');
+        showToast('No solution found in the archive for this language', 'error');
       }
     } catch (err) {
-      setCode(`// Error fetching solution: ${err.message}`);
+      setCode('');
+      showToast(`Error fetching solution: ${err.message}`, 'error');
     } finally {
       setFetchingCode(false);
     }
   };
 
-  const handleLanguageChange = (e) => {
-    const newLang = e.target.value;
+  const handleLanguageChange = (newLang) => {
     setLanguage(newLang);
     const slug = daily?.title_slug || daily?.slug;
     if (slug) {
@@ -81,16 +94,13 @@ export default function DailyChallenge() {
     setSolving(true);
     setSolveResult(null);
     const title = daily?.title || daily?.question_title || slug;
-    showToast(`Submitting ${title} (${language})...`, 'info');
+    showToast(`Submitting ${title} (${language})…`, 'info');
 
     try {
       const res = await fetch('/api/solve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          slug: slug,
-          lang: language,
-        }),
+        body: JSON.stringify({ slug, lang: language }),
       });
 
       const data = await res.json();
@@ -111,203 +121,205 @@ export default function DailyChallenge() {
     }
   };
 
-  const handleCopyCode = () => {
+  const handleCopyCode = async () => {
     if (!code) return;
-    navigator.clipboard.writeText(code);
-    showToast('Code copied to clipboard', 'success');
-  };
-
-  const getDifficultyClass = (diff) => {
-    const d = (diff || '').toLowerCase();
-    if (d === 'easy') return 'badge-easy';
-    if (d === 'medium') return 'badge-medium';
-    if (d === 'hard') return 'badge-hard';
-    return '';
+    try {
+      await copyToClipboard(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+      showToast('Code copied to clipboard', 'success');
+    } catch {
+      showToast('Could not copy to clipboard', 'error');
+    }
   };
 
   const problemId = daily?.question_frontend_id || daily?.frontend_question_id || '---';
-  const problemTitle = daily?.title || daily?.question_title || 'Fetching challenge...';
-  const problemContent = daily?.content || daily?.question_content || '<p>No description content available.</p>';
+  const problemTitle = daily?.title || daily?.question_title || 'Fetching challenge…';
+  const problemContent =
+    daily?.content || daily?.question_content || '<p>No description content available.</p>';
   const problemSlug = daily?.title_slug || daily?.slug;
+  const leetCodeUrl = daily?.link
+    ? `https://leetcode.com${daily.link}`
+    : problemSlug
+      ? `https://leetcode.com/problems/${problemSlug}`
+      : null;
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+    <div className="page-enter">
+      <div className="page-head">
         <div>
-          <h1 style={{ fontSize: '2rem' }}>Today's Daily Challenge</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            Synchronized directly with the official LeetCode GraphQL API
-          </p>
+          <h1>Today's Daily Challenge</h1>
+          <p className="page-desc">Synchronized live with the official LeetCode GraphQL API</p>
         </div>
         <button
+          type="button"
           className="btn btn-primary btn-lg"
           onClick={handleSolveSubmit}
           disabled={solving || loading || !daily}
         >
           <Zap size={18} />
-          <span>{solving ? 'Submitting to LeetCode...' : 'Solve & Submit Now'}</span>
+          <span>{solving ? 'Submitting to LeetCode…' : 'Solve & Submit Now'}</span>
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))', gap: '24px' }}>
-        {/* Left Column: Problem Information */}
+      <div className="grid-2-wide">
+        {/* Left: problem statement */}
         <div className="card">
           <div className="card-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ color: 'var(--text-muted)', fontWeight: 800 }}>
+            <div className="card-title-group">
+              <span className="mono" style={{ color: '#a78bfa', fontWeight: 700 }}>
                 #{problemId}
               </span>
-              <h2>{problemTitle}</h2>
+              <h2 style={{ overflowWrap: 'anywhere' }}>{problemTitle}</h2>
             </div>
             {daily && (
-              <span className={`badge ${getDifficultyClass(daily.difficulty)}`}>
-                {daily.difficulty}
+              <span className={cn('badge', getDifficultyClass(daily.difficulty))}>
+                {daily.difficulty || '—'}
               </span>
             )}
           </div>
 
           <div className="card-body">
-            {daily ? (
+            {loading && !daily ? (
               <div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                    📅 {daily.date || 'Today'}
+                <div className="row" style={{ marginBottom: 20 }}>
+                  <Skeleton width={110} height={26} radius={999} />
+                  <Skeleton width={130} height={30} radius={8} />
+                </div>
+                <div className="row" style={{ marginBottom: 24 }}>
+                  <Skeleton width={64} height={24} radius={999} />
+                  <Skeleton width={82} height={24} radius={999} />
+                  <Skeleton width={56} height={24} radius={999} />
+                </div>
+                <Skeleton width="96%" height={12} />
+                <div style={{ height: 12 }} />
+                <Skeleton width="88%" height={12} />
+                <div style={{ height: 12 }} />
+                <Skeleton width="92%" height={12} />
+                <div style={{ height: 12 }} />
+                <Skeleton width="60%" height={12} />
+              </div>
+            ) : daily ? (
+              <div>
+                <div className="row" style={{ marginBottom: 18 }}>
+                  <span className="badge badge-plain">
+                    <Calendar size={12} />
+                    {daily.date || 'Today'}
                   </span>
-                  {daily.link ? (
+                  {leetCodeUrl && (
                     <a
-                      href={`https://leetcode.com${daily.link}`}
+                      href={leetCodeUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="btn btn-secondary btn-sm"
                     >
                       <span>View on LeetCode</span>
-                      <ExternalLink size={14} />
+                      <ExternalLink size={13} />
                     </a>
-                  ) : problemSlug ? (
-                    <a
-                      href={`https://leetcode.com/problems/${problemSlug}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-secondary btn-sm"
-                    >
-                      <span>View on LeetCode</span>
-                      <ExternalLink size={14} />
-                    </a>
-                  ) : null}
+                  )}
                 </div>
 
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '24px' }}>
-                  {(daily.topic_tags || []).map((t, idx) => {
-                    const tagLabel = typeof t === 'string' ? t : (t?.name || `Tag ${idx}`);
-                    return (
-                      <span key={tagLabel + idx} className="badge" style={{ background: 'rgba(99,102,241,0.1)', color: '#a5b4fc' }}>
-                        <Tag size={12} style={{ marginRight: '4px' }} />
-                        {tagLabel}
-                      </span>
-                    );
-                  })}
-                </div>
+                {(daily.topic_tags || []).length > 0 && (
+                  <div className="row" style={{ marginBottom: 22 }}>
+                    {daily.topic_tags.map((t, idx) => {
+                      const tagLabel = typeof t === 'string' ? t : t?.name || `Tag ${idx}`;
+                      return (
+                        <span key={tagLabel + idx} className="tag-chip">
+                          <Tag size={11} />
+                          {tagLabel}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div
-                  className="markdown-body"
+                  className="markdown-body scroll-area"
                   dangerouslySetInnerHTML={{ __html: problemContent }}
-                  style={{ maxHeight: '550px', overflowY: 'auto', paddingRight: '8px' }}
                 />
               </div>
             ) : (
-              <p style={{ color: 'var(--text-muted)' }}>Loading problem details from LeetCode...</p>
+              <EmptyState
+                icon={Calendar}
+                title="Challenge unavailable"
+                description={
+                  loadError
+                    ? 'The LeetCode GraphQL endpoint could not be reached. Check your connection and retry.'
+                    : 'No daily challenge data available right now.'
+                }
+                action={
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={fetchDailyQuestion}>
+                    <RotateCw size={14} />
+                    <span>Retry</span>
+                  </button>
+                }
+              />
             )}
           </div>
         </div>
 
-        {/* Right Column: Code & Solution Preview */}
+        {/* Right: solution preview */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <FileCode size={18} color="#818cf8" />
+            <div className="card-title-group">
+              <span className="card-title-icon">
+                <FileCode2 size={18} />
+              </span>
               <h2>Solution Archive</h2>
             </div>
-            <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>
-              {source || 'doocs/leetcode'}
-            </span>
+            {source && <span className="badge badge-plain">{source}</span>}
           </div>
 
-          <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Language:
-                </label>
-                <select
-                  value={language}
-                  onChange={handleLanguageChange}
-                  className="form-select"
-                  style={{ maxWidth: '160px', padding: '8px 12px' }}
-                >
-                  <option value="typescript">TypeScript</option>
-                  <option value="python3">Python 3</option>
-                  <option value="rust">Rust</option>
-                  <option value="golang">Go</option>
-                  <option value="java">Java</option>
-                  <option value="cpp">C++</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
+          <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="row-between">
+              <LanguageTabs value={language} onChange={handleLanguageChange} disabled={fetchingCode} />
+              <div className="row" style={{ gap: 8 }}>
                 <button
+                  type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={() => problemSlug && fetchPreviewCode(problemSlug, language)}
                   disabled={fetchingCode || !daily}
+                  title="Reload solution from archive"
                 >
-                  <RotateCw size={14} className={fetchingCode ? 'animate-spin' : ''} />
+                  <RotateCw size={14} className={cn(fetchingCode && 'animate-spin')} />
                   <span>Reload</span>
                 </button>
-                <button className="btn btn-secondary btn-sm" onClick={handleCopyCode}>
-                  <Copy size={14} />
-                  <span>Copy</span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCopyCode}
+                  disabled={!code}
+                  title="Copy code to clipboard"
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copied ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
             </div>
 
-            <div className="code-container" style={{ flex: 1, minHeight: '380px' }}>
-              <pre>
-                <code>{fetchingCode ? '// Fetching solution from repository...' : code || '// Ready to fetch'}</code>
-              </pre>
-            </div>
-
-            {/* Submission Result Callout */}
-            {solveResult && (
-              <div
-                style={{
-                  padding: '16px',
-                  borderRadius: 'var(--radius-md)',
-                  background: solveResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                  border: `1px solid ${solveResult.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  {solveResult.success ? (
-                    <CheckCircle size={18} color="var(--success)" />
-                  ) : (
-                    <AlertCircle size={18} color="var(--danger)" />
-                  )}
-                  <strong style={{ color: solveResult.success ? 'var(--success)' : 'var(--danger)' }}>
-                    {solveResult.status || (solveResult.success ? 'Success' : 'Failed')}
-                  </strong>
+            {fetchingCode ? (
+              <div className="code-container" style={{ minHeight: 380 }}>
+                <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <Skeleton key={i} width={`${88 - (i % 4) * 14}%`} height={11} />
+                  ))}
                 </div>
-                {solveResult.runtime && (
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    Runtime: <span style={{ color: '#fff' }}>{solveResult.runtime}</span> | Memory:{' '}
-                    <span style={{ color: '#fff' }}>{solveResult.memory}</span>
-                  </div>
-                )}
-                {solveResult.error && (
-                  <div style={{ fontSize: '0.85rem', color: '#fca5a5', marginTop: '4px' }}>
-                    {solveResult.error}
-                  </div>
-                )}
               </div>
+            ) : code ? (
+              <CodeBlock code={code} language={language} maxHeight={440} />
+            ) : (
+              <EmptyState
+                icon={ListChecks}
+                title="No solution loaded"
+                description={
+                  daily
+                    ? 'No archived solution found for this language yet. Pick another language or reload.'
+                    : 'Load the daily challenge first, then preview solutions here.'
+                }
+              />
             )}
+
+            <ResultPanel result={solveResult} />
           </div>
         </div>
       </div>

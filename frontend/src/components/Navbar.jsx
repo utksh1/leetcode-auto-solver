@@ -1,87 +1,165 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Terminal, History, Settings, Zap } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Calendar,
+  Terminal,
+  History,
+  Settings,
+  Zap,
+  Menu,
+  X,
+} from 'lucide-react';
+import { cn } from '../lib/utils';
+
+const NAV_ITEMS = [
+  { to: '/', end: true, icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/daily', icon: Calendar, label: 'Daily Challenge' },
+  { to: '/solver', icon: Terminal, label: 'Problem Solver' },
+  { to: '/history', icon: History, label: 'History' },
+  { to: '/settings', icon: Settings, label: 'Settings' },
+];
 
 export default function Navbar() {
   const [authStatus, setAuthStatus] = useState({ checked: false, valid: false, username: null });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
+    let cancelled = false;
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/session/status');
+        if (!cancelled && res.ok) {
+          const data = await res.json();
+          setAuthStatus({
+            checked: true,
+            valid: Boolean(data.valid ?? data.isSignedIn),
+            username: data.username || null,
+          });
+          return;
+        }
+      } catch {
+        /* fall through */
+      }
+      if (!cancelled) setAuthStatus({ checked: true, valid: false, username: null });
+    };
     checkSession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const checkSession = async () => {
-    try {
-      const res = await fetch('/api/session/status');
-      if (res.ok) {
-        const data = await res.json();
-        setAuthStatus({
-          checked: true,
-          valid: Boolean(data.valid ?? data.isSignedIn),
-          username: data.username || null,
-        });
-      } else {
-        setAuthStatus({ checked: true, valid: false, username: null });
-      }
-    } catch {
-      setAuthStatus({ checked: true, valid: false, username: null });
-    }
-  };
+  // Close the mobile menu whenever the route changes
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
+  // Lock body scroll while the mobile menu is open
+  useEffect(() => {
+    document.body.classList.toggle('modal-open', menuOpen);
+    return () => document.body.classList.remove('modal-open');
+  }, [menuOpen]);
+
+  const statusText = !authStatus.checked
+    ? 'Checking session…'
+    : authStatus.valid
+      ? authStatus.username
+        ? `Logged in: ${authStatus.username}`
+        : 'Session Active'
+      : 'No Session Configured';
+
+  const statusTitle = authStatus.checked
+    ? authStatus.valid
+      ? 'LeetCode session is valid — automated submissions enabled.'
+      : 'No valid LeetCode session. Configure cookies in Settings.'
+    : 'Verifying your LeetCode session…';
 
   return (
-    <header className="app-header">
-      <div className="nav-container">
-        <NavLink to="/" className="brand">
-          <div className="brand-icon">
-            <Zap size={20} color="#a5b4fc" />
-          </div>
-          <div className="brand-text">
-            <span className="brand-title">
-              LeetCode<span className="highlight">Auto</span>
+    <>
+      <header className="app-header">
+        <div className="nav-container">
+          <NavLink to="/" className="brand" aria-label="LeetCode Auto home">
+            <span className="brand-icon">
+              <Zap size={20} />
             </span>
-            <span className="brand-badge">Rust + React</span>
+            <span className="brand-text">
+              <span className="brand-title">
+                LeetCode<span className="highlight">Auto</span>
+              </span>
+              <span className="brand-badge">Rust + React</span>
+            </span>
+          </NavLink>
+
+          <nav className="nav-links" aria-label="Primary">
+            {NAV_ITEMS.map(({ to, end, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) => cn('nav-btn', isActive && 'active')}
+              >
+                <Icon size={17} />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+
+          <div className="nav-right">
+            <div
+              className="nav-status"
+              title={statusTitle}
+              aria-live="polite"
+              role="status"
+            >
+              <span
+                className={cn(
+                  'status-indicator',
+                  !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
+                )}
+              />
+              <span className="status-text">{statusText}</span>
+            </div>
+
+            <button
+              type="button"
+              className="nav-toggle"
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              {menuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
           </div>
-        </NavLink>
-
-        <nav className="nav-links">
-          <NavLink to="/" end className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}>
-            <LayoutDashboard size={18} />
-            <span>Dashboard</span>
-          </NavLink>
-          <NavLink to="/daily" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}>
-            <Calendar size={18} />
-            <span>Daily Challenge</span>
-          </NavLink>
-          <NavLink to="/solver" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}>
-            <Terminal size={18} />
-            <span>Problem Solver</span>
-          </NavLink>
-          <NavLink to="/history" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}>
-            <History size={18} />
-            <span>History</span>
-          </NavLink>
-          <NavLink to="/settings" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}>
-            <Settings size={18} />
-            <span>Settings</span>
-          </NavLink>
-        </nav>
-
-        <div className="nav-status">
-          <span
-            className={`status-indicator ${
-              !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
-            }`}
-          />
-          <span className="status-text" style={{ fontSize: '0.85rem' }}>
-            {!authStatus.checked
-              ? 'Checking session...'
-              : authStatus.valid
-              ? authStatus.username
-                ? `Logged in: ${authStatus.username}`
-                : 'Session Active'
-              : 'No Session Configured'}
-          </span>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {menuOpen && (
+        <div className="mobile-menu">
+          <nav aria-label="Mobile">
+            {NAV_ITEMS.map(({ to, end, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) => cn('nav-btn', isActive && 'active')}
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+          <div className="nav-status">
+            <span
+              className={cn(
+                'status-indicator',
+                !authStatus.checked ? '' : authStatus.valid ? 'active' : 'error'
+              )}
+            />
+            <span className="status-text">{statusText}</span>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

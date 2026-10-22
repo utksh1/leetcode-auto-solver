@@ -1,17 +1,60 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  Key, 
-  CheckCircle2, 
-  XCircle, 
-  ShieldCheck, 
-  Info, 
-  Save, 
+import {
+  Key,
+  CheckCircle2,
+  XCircle,
+  ShieldCheck,
+  Info,
+  Save,
   RotateCw,
   Server,
-  Terminal,
-  Cpu
+  Calendar,
+  Database,
+  UserCheck,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { Skeleton } from '../components/Skeleton';
+
+const GUIDE_STEPS = [
+  {
+    text: 'Open',
+    link: { href: 'https://leetcode.com', label: 'leetcode.com' },
+    after: ' and make sure you are logged into your account.',
+  },
+  {
+    text: 'Press',
+    kbd: ['F12'],
+    kbdAlt: 'Cmd+Option+I on Mac',
+    after: ' to open browser DevTools.',
+  },
+  {
+    text: 'Go to the',
+    bold: 'Application',
+    tail: ' tab (Chrome/Edge/Brave) or',
+    bold2: 'Storage',
+    tail2: ' tab (Firefox).',
+  },
+  {
+    text: 'Under',
+    bold: 'Cookies',
+    after: ', select https://leetcode.com.',
+  },
+  {
+    text: 'Copy the value of the cookie named',
+    code: 'LEETCODE_SESSION',
+    after: ' and paste it into the form.',
+  },
+  {
+    text: 'Copy the value of the cookie named',
+    code: 'csrftoken',
+    after: ' and paste it as well.',
+  },
+  {
+    text: 'Click',
+    bold: 'Verify & Save Session',
+    after: ' to test and persist your credentials.',
+  },
+];
 
 export default function SettingsPage() {
   const { showToast } = useToast();
@@ -20,13 +63,7 @@ export default function SettingsPage() {
   const [csrfToken, setCsrfToken] = useState('');
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [sessionInfo, setSessionInfo] = useState({
-    checked: false,
-    valid: false,
-    username: null,
-    user_slug: null,
-    avatar: null,
-  });
+  const [sessionInfo, setSessionInfo] = useState(null);
 
   useEffect(() => {
     checkStatus();
@@ -40,7 +77,7 @@ export default function SettingsPage() {
         const data = await res.json();
         setSessionInfo({
           checked: true,
-          valid: data.valid,
+          valid: Boolean(data.valid),
           username: data.username || null,
           user_slug: data.user_slug || null,
           avatar: data.avatar || null,
@@ -63,7 +100,7 @@ export default function SettingsPage() {
     }
 
     setSaving(true);
-    showToast('Validating cookies against LeetCode GraphQL...', 'info');
+    showToast('Validating cookies against LeetCode GraphQL…', 'info');
 
     try {
       const res = await fetch('/api/session', {
@@ -99,219 +136,305 @@ export default function SettingsPage() {
   };
 
   return (
-    <div>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '2rem' }}>Settings & Authentication</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>
-          Manage your LeetCode session credentials and scheduler configuration
-        </p>
+    <div className="page-enter">
+      <div className="page-head">
+        <div>
+          <h1>Settings & Authentication</h1>
+          <p className="page-desc">
+            Manage your LeetCode session credentials and review the solver configuration
+          </p>
+        </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: '24px' }}>
-        {/* Left Column: Session Status & Form */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Status Banner Card */}
+      <div className="grid-2-wide">
+        {/* Left column */}
+        <div className="stack">
+          {/* Status */}
           <div className="card">
             <div className="card-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <ShieldCheck size={20} color="#818cf8" />
+              <div className="card-title-group">
+                <span className="card-title-icon">
+                  <ShieldCheck size={19} />
+                </span>
                 <h2>LeetCode Account Status</h2>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={checkStatus} disabled={checking}>
-                <RotateCw size={14} className={checking ? 'animate-spin' : ''} />
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-icon"
+                onClick={checkStatus}
+                disabled={checking}
+                title="Re-check session validity"
+                aria-label="Re-check session validity"
+              >
+                <RotateCw size={15} className={checking ? 'animate-spin' : ''} />
               </button>
             </div>
             <div className="card-body">
-              {sessionInfo.checked ? (
-                sessionInfo.valid ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    {sessionInfo.avatar ? (
-                      <img
-                        src={sessionInfo.avatar}
-                        alt="Avatar"
-                        style={{ width: '48px', height: '48px', borderRadius: '50%', border: '2px solid var(--success)' }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: '48px',
-                          height: '48px',
-                          borderRadius: '50%',
-                          background: 'rgba(16, 185, 129, 0.2)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'var(--success)',
-                          fontWeight: 800,
-                        }}
-                      >
-                        ✓
-                      </div>
-                    )}
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>
-                          {sessionInfo.username || 'Active Account'}
-                        </span>
-                        <span className="badge badge-success">Session Active</span>
-                      </div>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                        Authenticated for automated daily challenge submissions.
-                      </p>
-                    </div>
+              {!sessionInfo?.checked ? (
+                <div className="row" style={{ gap: 14 }}>
+                  <Skeleton width={48} height={48} radius={999} />
+                  <div style={{ flex: 1 }}>
+                    <Skeleton width={140} height={16} />
+                    <div style={{ height: 8 }} />
+                    <Skeleton width={220} height={11} />
                   </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                </div>
+              ) : sessionInfo.valid ? (
+                <div className="row" style={{ gap: 16, flexWrap: 'nowrap' }}>
+                  {sessionInfo.avatar ? (
+                    <img
+                      src={sessionInfo.avatar}
+                      alt={`${sessionInfo.username || 'Account'} avatar`}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: '50%',
+                        border: '2px solid var(--success)',
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : (
                     <div
                       style={{
-                        width: '44px',
-                        height: '44px',
+                        width: 48,
+                        height: 48,
                         borderRadius: '50%',
-                        background: 'rgba(239, 68, 68, 0.15)',
+                        background: 'rgba(16, 185, 129, 0.16)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: 'var(--danger)',
+                        color: 'var(--success)',
+                        flexShrink: 0,
                       }}
                     >
-                      <XCircle size={22} />
+                      <UserCheck size={22} />
                     </div>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <strong style={{ color: 'var(--danger)' }}>No Valid Session Found</strong>
-                        <span className="badge badge-danger">Unauthenticated</span>
-                      </div>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        Add your session cookies below to enable automated submissions.
-                      </p>
+                  )}
+                  <div>
+                    <div className="row" style={{ gap: 8 }}>
+                      <span style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {sessionInfo.username || 'Active Account'}
+                      </span>
+                      <span className="badge badge-success">
+                        <CheckCircle2 size={11} />
+                        Session Active
+                      </span>
                     </div>
+                    <p style={{ fontSize: '0.84rem', marginTop: 2 }}>
+                      Authenticated for automated daily challenge submissions.
+                    </p>
                   </div>
-                )
+                </div>
               ) : (
-                <p style={{ color: 'var(--text-muted)' }}>Checking session validity...</p>
+                <div className="row" style={{ gap: 14, flexWrap: 'nowrap' }}>
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: '50%',
+                      background: 'rgba(244, 63, 94, 0.14)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--danger)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <XCircle size={22} />
+                  </div>
+                  <div>
+                    <div className="row" style={{ gap: 8 }}>
+                      <strong style={{ color: '#fb7185' }}>No Valid Session Found</strong>
+                      <span className="badge badge-danger">Unauthenticated</span>
+                    </div>
+                    <p style={{ fontSize: '0.84rem', marginTop: 2 }}>
+                      Add your session cookies below to enable automated submissions.
+                    </p>
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Cookie Input Form */}
+          {/* Cookie form */}
           <div className="card">
             <div className="card-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Key size={18} color="#818cf8" />
+              <div className="card-title-group">
+                <span className="card-title-icon">
+                  <Key size={18} />
+                </span>
                 <h2>Update Session Cookies</h2>
               </div>
             </div>
             <div className="card-body">
-              <div className="callout callout-info" style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <Info size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div className="callout callout-info" style={{ marginBottom: 20 }}>
+                <div className="row" style={{ gap: 10, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+                  <Info size={17} style={{ flexShrink: 0, marginTop: 2 }} />
                   <div>
-                    LeetCode implements Cloudflare protection on direct username/password login.
-                    Using browser session cookies bypasses CAPTCHA blocks completely and lasts for weeks.
+                    LeetCode protects direct logins with Cloudflare. Using browser session cookies
+                    bypasses CAPTCHA blocks entirely and typically stays valid for weeks.
                   </div>
                 </div>
               </div>
 
               <form onSubmit={handleSaveSession}>
                 <div className="form-group">
-                  <label htmlFor="inputSessionCookie">LEETCODE_SESSION Cookie *</label>
-                  <textarea
-                    id="inputSessionCookie"
-                    className="form-textarea"
-                    rows={3}
-                    placeholder="eyJ0eXAiOiJKV1QiLCJhbGci... or raw session string"
-                    value={sessionCookie}
-                    onChange={(e) => setSessionCookie(e.target.value)}
-                    required
-                  />
-                  <span className="form-hint">Found under Application &gt; Cookies &gt; leetcode.com</span>
+                  <label htmlFor="inputSessionCookie">LEETCODE_SESSION cookie *</label>
+                  <div style={{ position: 'relative' }}>
+                    <textarea
+                      id="inputSessionCookie"
+                      className="form-textarea"
+                      rows={3}
+                      placeholder="eyJ0eXAiOiJKV1QiLCJhbGci…"
+                      value={sessionCookie}
+                      onChange={(e) => setSessionCookie(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <span className="form-hint">Found under Application → Cookies → leetcode.com</span>
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="inputCsrfToken">csrftoken Cookie *</label>
+                  <label htmlFor="inputCsrfToken">csrftoken cookie *</label>
                   <input
                     id="inputCsrfToken"
                     type="text"
                     className="form-input"
-                    placeholder="e.g. aB3cD4eF5gH6..."
+                    placeholder="aB3cD4eF5gH6…"
                     value={csrfToken}
                     onChange={(e) => setCsrfToken(e.target.value)}
                     required
+                    autoComplete="off"
+                    spellCheck="false"
                   />
-                  <span className="form-hint">Found alongside LEETCODE_SESSION</span>
+                  <span className="form-hint">Found alongside LEETCODE_SESSION in the same panel</span>
                 </div>
 
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   <Save size={16} />
-                  <span>{saving ? 'Testing & Saving...' : 'Verify & Save Session'}</span>
+                  <span>{saving ? 'Testing & Saving…' : 'Verify & Save Session'}</span>
                 </button>
               </form>
             </div>
           </div>
         </div>
 
-        {/* Right Column: Step-by-Step Guide & System Info */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Quick Guide */}
+        {/* Right column */}
+        <div className="stack">
+          {/* Guide */}
           <div className="card">
             <div className="card-header">
-              <h2>How to Get Your Cookies (60 Seconds)</h2>
+              <div className="card-title-group">
+                <span className="card-title-icon">
+                  <Key size={18} />
+                </span>
+                <h2>How to Get Your Cookies (60 Seconds)</h2>
+              </div>
             </div>
             <div className="card-body">
-              <ol style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                <li>
-                  Open <a href="https://leetcode.com" target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>leetcode.com</a> and ensure you are logged into your account.
-                </li>
-                <li>
-                  Press <kbd style={{ background: '#334155', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>F12</kbd> (or <kbd style={{ background: '#334155', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>Cmd+Option+I</kbd> on Mac) to open DevTools.
-                </li>
-                <li>
-                  Go to the <b>Application</b> tab (Chrome/Edge/Brave) or <b>Storage</b> tab (Firefox).
-                </li>
-                <li>
-                  Under <b>Cookies</b>, select <code>https://leetcode.com</code>.
-                </li>
-                <li>
-                  Copy the value of the cookie named <code>LEETCODE_SESSION</code> and paste it above.
-                </li>
-                <li>
-                  Copy the value of the cookie named <code>csrftoken</code> and paste it above.
-                </li>
-                <li>
-                  Click <b>Verify &amp; Save Session</b> to test and persist your credentials.
-                </li>
+              <ol className="guide-steps">
+                {GUIDE_STEPS.map((step, i) => (
+                  <li key={i}>
+                    <span>{step.text} </span>
+                    {step.link && (
+                      <a href={step.link.href} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>
+                        {step.link.label}
+                      </a>
+                    )}
+                    {step.kbd && (
+                      <>
+                        <kbd>{step.kbd[0]}</kbd>
+                        {step.kbdAlt && <span> ({step.kbdAlt})</span>}
+                      </>
+                    )}
+                    {step.bold && <strong>{step.bold}</strong>}
+                    {step.tail && <span>{step.tail}</span>}
+                    {step.bold2 && <strong>{step.bold2}</strong>}
+                    {step.tail2 && <span>{step.tail2}</span>}
+                    {step.code && <code>{step.code}</code>}
+                    {step.after && <span>{step.after}</span>}
+                  </li>
+                ))}
               </ol>
             </div>
           </div>
 
-          {/* Engine Architecture & Diagnostics */}
+          {/* System info */}
           <div className="card">
             <div className="card-header">
-              <h2>System Architecture</h2>
-            </div>
-            <div className="card-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Server Runtime</span>
-                  <span style={{ fontWeight: 600, color: '#a5b4fc' }}>Rust 1.99 + Axum 0.7</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Memory Footprint</span>
-                  <span style={{ fontWeight: 600, color: 'var(--success)' }}>&lt; 15 MB (Render Free Tier Safe)</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Daily Cron Trigger</span>
-                  <span style={{ fontWeight: 600 }}>10:00 AM UTC (tokio-cron-scheduler)</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Solution Repository</span>
-                  <span style={{ fontWeight: 600, color: '#818cf8' }}>doocs/leetcode (3,500+ problems)</span>
-                </div>
+              <div className="card-title-group">
+                <span className="card-title-icon">
+                  <Server size={18} />
+                </span>
+                <h2>System Architecture</h2>
               </div>
+            </div>
+            <div className="card-body" style={{ padding: '12px 24px 16px' }}>
+              {[
+                { icon: Server, label: 'Server Runtime', value: 'Rust + Axum 0.7', color: '#a78bfa' },
+                { icon: Database, label: 'Memory Footprint', value: '< 15 MB (Render Free Tier Safe)', color: '#34d399' },
+                { icon: Calendar, label: 'Daily Cron Trigger', value: '10:00 AM UTC (tokio-cron-scheduler)', color: 'var(--text-primary)' },
+                { icon: Database, label: 'Solution Repository', value: 'doocs/leetcode (3,500+ problems)', color: '#a78bfa' },
+              ].map(({ icon: Icon, label, value, color }, i) => (
+                <div
+                  key={label}
+                  className="row-between"
+                  style={{
+                    padding: '12px 0',
+                    borderBottom: i < 3 ? '1px solid var(--border-subtle)' : 'none',
+                  }}
+                >
+                  <span className="row" style={{ gap: 9, color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
+                    <Icon size={15} style={{ color: 'var(--text-muted)' }} />
+                    {label}
+                  </span>
+                  <span style={{ fontWeight: 600, fontSize: '0.88rem', color, textAlign: 'right' }}>
+                    {value}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
+
+      <style>{`
+        .guide-steps {
+          padding-left: 0;
+          margin: 0;
+          list-style: none;
+          counter-reset: guide;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          font-size: 0.89rem;
+          color: #c3cedd;
+        }
+        .guide-steps li {
+          counter-increment: guide;
+          position: relative;
+          padding-left: 40px;
+          line-height: 1.55;
+        }
+        .guide-steps li::before {
+          content: counter(guide);
+          position: absolute;
+          left: 0;
+          top: 1px;
+          width: 26px;
+          height: 26px;
+          border-radius: 8px;
+          background: rgba(139, 92, 246, 0.14);
+          border: 1px solid rgba(139, 92, 246, 0.3);
+          color: #c4b5fd;
+          font-family: var(--font-heading);
+          font-weight: 700;
+          font-size: 0.8rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+      `}</style>
     </div>
   );
 }
