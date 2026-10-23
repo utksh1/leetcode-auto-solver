@@ -489,8 +489,8 @@ impl LeetCodeClient {
         // Poll check endpoint
         let check_url = format!("{}/submissions/detail/{}/check/", LEETCODE_URL, submission_id);
 
-        for attempt in 1..=12 {
-            sleep(Duration::from_millis(1500)).await;
+        for attempt in 1..=10 {
+            sleep(Duration::from_millis(2500)).await;
 
             let check_resp = self.client.get(&check_url)
                 .header(COOKIE, &cookie_str)
@@ -703,8 +703,8 @@ impl LeetCodeClient {
 
         let check_url = format!("{}/submissions/detail/{}/check/", LEETCODE_URL, interpret_id);
 
-        for attempt in 1..=12 {
-            sleep(Duration::from_millis(1500)).await;
+        for attempt in 1..=10 {
+            sleep(Duration::from_millis(2500)).await;
 
             let check_resp = self.client.get(&check_url)
                 .header(COOKIE, &cookie_str)
