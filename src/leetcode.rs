@@ -101,8 +101,25 @@ pub struct LeetCodeClient {
 
 impl LeetCodeClient {
     pub fn new() -> Self {
+        // Browser-like default headers lower the Cloudflare bot score a bit
+        // (the TLS fingerprint still differs from a real browser, but every
+        // bit of conformity helps under sustained automated load).
+        let mut default_headers = HeaderMap::new();
+        default_headers.insert("accept", HeaderValue::from_static("*/*"));
+        default_headers.insert("accept-language", HeaderValue::from_static("en-US,en;q=0.9"));
+        default_headers.insert(
+            "sec-ch-ua",
+            HeaderValue::from_static("\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Google Chrome\";v=\"122\""),
+        );
+        default_headers.insert("sec-ch-ua-mobile", HeaderValue::from_static("?0"));
+        default_headers.insert("sec-ch-ua-platform", HeaderValue::from_static("\"macOS\""));
+        default_headers.insert("sec-fetch-dest", HeaderValue::from_static("empty"));
+        default_headers.insert("sec-fetch-mode", HeaderValue::from_static("cors"));
+        default_headers.insert("sec-fetch-site", HeaderValue::from_static("same-origin"));
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
+            .default_headers(default_headers)
             .build()
             .unwrap_or_default();
         Self { client }
