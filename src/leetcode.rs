@@ -117,11 +117,27 @@ impl LeetCodeClient {
         default_headers.insert("sec-fetch-mode", HeaderValue::from_static("cors"));
         default_headers.insert("sec-fetch-site", HeaderValue::from_static("same-origin"));
 
-        let client = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
-            .default_headers(default_headers)
-            .build()
-            .unwrap_or_default();
+            .default_headers(default_headers);
+
+        // Optional egress proxy. When Cloudflare flags the host's shared IP,
+        // setting LEETCODE_PROXY (e.g. "http://user:pass@proxy:8080" or
+        // "socks5://...") routes all LeetCode traffic through a different
+        // address without any code change.
+        if let Ok(proxy_url) = std::env::var("LEETCODE_PROXY") {
+            if !proxy_url.trim().is_empty() {
+                match reqwest::Proxy::all(proxy_url.trim()) {
+                    Ok(p) => {
+                        builder = builder.proxy(p);
+                        println!("🌐 LeetCode client using proxy from LEETCODE_PROXY");
+                    }
+                    Err(e) => println!("⚠️ Invalid LEETCODE_PROXY url: {}", e),
+                }
+            }
+        }
+
+        let client = builder.build().unwrap_or_default();
         Self { client }
     }
 
