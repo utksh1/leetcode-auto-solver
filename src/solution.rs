@@ -248,15 +248,17 @@ impl SolutionFetcher {
     }
 
     pub fn clean_code(code: &str, _lang: &str) -> String {
-        // Remove markdown comments, tabs and leading empty lines
-        let re_multi_comment = Regex::new(r"/\*[\s\S]*?\*/").unwrap();
-        let re_single_comment = Regex::new(r"//.*").unwrap();
-
-        let no_multi = re_multi_comment.replace_all(code, "");
-        let no_single = re_single_comment.replace_all(&no_multi, "");
-
+        // Normalize trailing whitespace and drop leading/trailing blank lines.
+        //
+        // NOTE: this function deliberately does NOT strip comments. A previous
+        // version removed `//.*` (and `/* ... */`) sequences, which silently
+        // CORRUPTED every Python solution that uses floor division:
+        // `x //= 10` became `x`, `mid = (l + r) // 2` became `mid = (l + r)`.
+        // Those submissions were judged Runtime Error / Wrong Answer even
+        // though the source solution was correct. Comments are harmless to the
+        // LeetCode judge, so they are kept as-is.
         let mut lines = Vec::new();
-        for line in no_single.lines() {
+        for line in code.lines() {
             let trimmed = line.trim_end();
             lines.push(trimmed.to_string());
         }
