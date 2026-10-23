@@ -648,6 +648,14 @@ pub async fn bulk_solve_handler(
         let n = task_state.bulk.total.load(Ordering::SeqCst);
         println!("🏭 [BULK] starting run: {} problems, lang={}", n, task_lang);
 
+        // LeetCode enforces rolling hourly quotas: when we trip them
+        // repeatedly, hammering away at 30-90s intervals wastes attempts.
+        // Instead: after COOLDOWN_AFTER consecutive rate-limits, sleep for
+        // COOLDOWN_SECS and resume with a fresh budget.
+        let mut consecutive_rl: u32 = 0;
+        const COOLDOWN_AFTER: u32 = 5;
+        const COOLDOWN_SECS: u64 = 600;
+
         for id in todo {
             if task_state.bulk.stop_flag.load(Ordering::SeqCst) {
                 println!("🏭 [BULK] stop requested — finishing");
@@ -763,6 +771,7 @@ pub async fn bulk_solve_handler(
             task_state.bulk.done.fetch_add(1, Ordering::SeqCst);
             if status == "Accepted" {
                 task_state.bulk.accepted.fetch_add(1, Ordering::SeqCst);
+                consecutive_rl = 0;
                 // gently speed up when clean
                 let cur = task_state.bulk.interval_ms.load(Ordering::SeqCst);
                 let next = ((cur as f64) * 0.94).round() as usize;
@@ -773,11 +782,27 @@ pub async fn bulk_solve_handler(
                     *task_state.bulk.last_error.write().await =
                         Some(format!("#{} {}: {}", problem.question_frontend_id, problem.title, e));
                     if bulk_rate_limited(e) {
+                        consecutive_rl += 1;
                         // hard global backoff on 429 / Cloudflare challenges
                         let cur = task_state.bulk.interval_ms.load(Ordering::SeqCst);
                         let next = ((cur as f64) * 1.9).round() as usize;
                         task_state.bulk.interval_ms.store(next.min(90_000), Ordering::SeqCst);
                     }
+                }
+            }
+
+            // Rate-limit cool-down: pause and let LeetCode's rolling quota
+            // recover instead of burning attempts at crawled-out intervals.
+            if consecutive_rl >= COOLDOWN_AFTER {
+                println!("🏭 [BULK] {} consecutive rate-limits — cooling down {}s",
+                         consecutive_rl, COOLDOWN_SECS);
+                *task_state.bulk.last_error.write().await =
+                    Some(format!("rate-limit cool-down {}s (quota window)", COOLDOWN_SECS));
+                tokio::time::sleep(std::time::Duration::from_secs(COOLDOWN_SECS)).await;
+                consecutive_rl = 0;
+                task_state.bulk.interval_ms.store(5000, Ordering::SeqCst);
+                if task_state.bulk.stop_flag.load(Ordering::SeqCst) {
+                    break;
                 }
             }
 
