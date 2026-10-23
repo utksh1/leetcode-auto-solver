@@ -20,6 +20,7 @@ pub struct AppState {
     pub leetcode: Arc<LeetCodeClient>,
     pub solution_fetcher: Arc<SolutionFetcher>,
     pub config: Arc<RwLock<AppConfig>>,
+    pub bulk: Arc<BulkState>,
 }
 
 #[derive(Deserialize)]
@@ -543,4 +544,293 @@ pub async fn save_session_handler(
         }
         Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": format!("Could not verify session: {}", e) }))).into_response(),
     }
+}
+
+// ============================================================================
+// Bulk solver — grinds through a list of problem ids server-side.
+//
+// The backend keeps submitting (with the same adaptive backoff used against
+// LeetCode's 429 / Cloudflare-403 defenses) even when the API caller goes
+// away. Progress is persisted in the submissions table after every problem,
+// so a restarted bulk run automatically skips everything already Accepted.
+// ============================================================================
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+pub struct BulkState {
+    pub running: AtomicBool,
+    pub stop_flag: AtomicBool,
+    pub total: AtomicUsize,
+    pub done: AtomicUsize,
+    pub accepted: AtomicUsize,
+    pub failed: AtomicUsize,
+    pub skipped: AtomicUsize,
+    pub interval_ms: AtomicUsize,
+    pub current: tokio::sync::RwLock<String>,
+    pub last_error: tokio::sync::RwLock<Option<String>>,
+    pub started_at: tokio::sync::RwLock<Option<String>>,
+    pub finished_at: tokio::sync::RwLock<Option<String>>,
+}
+
+impl BulkState {
+    pub fn new() -> Self {
+        Self {
+            running: AtomicBool::new(false),
+            stop_flag: AtomicBool::new(false),
+            total: AtomicUsize::new(0),
+            done: AtomicUsize::new(0),
+            accepted: AtomicUsize::new(0),
+            failed: AtomicUsize::new(0),
+            skipped: AtomicUsize::new(0),
+            interval_ms: AtomicUsize::new(5000),
+            current: tokio::sync::RwLock::new(String::new()),
+            last_error: tokio::sync::RwLock::new(None),
+            started_at: tokio::sync::RwLock::new(None),
+            finished_at: tokio::sync::RwLock::new(None),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct BulkSolveRequest {
+    pub ids: Vec<String>,
+    pub lang: Option<String>,
+}
+
+fn bulk_rate_limited(err: &str) -> bool {
+    err.contains("429") || err.contains("403") || err.contains("Too Many Requests")
+}
+
+pub async fn bulk_solve_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<BulkSolveRequest>,
+) -> impl IntoResponse {
+    if payload.ids.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "ids list is empty" }))).into_response();
+    }
+    if state.bulk.running.load(Ordering::SeqCst) {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({
+            "error": "bulk run already in progress — see /api/bulk/status"
+        }))).into_response();
+    }
+
+    // Skip everything already Accepted so runs are resumable.
+    let already = state.db.get_accepted_problem_ids().unwrap_or_default();
+    let already_set: std::collections::HashSet<String> = already.into_iter().collect();
+    let requested = payload.ids.len();
+    let todo: Vec<String> = payload
+        .ids
+        .into_iter()
+        .filter(|id| !already_set.contains(id))
+        .collect();
+    let skipped = requested - todo.len();
+
+    let default_lang = state.config.read().await.preferred_lang.clone();
+    let lang = payload.lang.unwrap_or(default_lang);
+
+    state.bulk.running.store(true, Ordering::SeqCst);
+    state.bulk.stop_flag.store(false, Ordering::SeqCst);
+    state.bulk.total.store(todo.len(), Ordering::SeqCst);
+    state.bulk.done.store(0, Ordering::SeqCst);
+    state.bulk.accepted.store(0, Ordering::SeqCst);
+    state.bulk.failed.store(0, Ordering::SeqCst);
+    state.bulk.skipped.store(0, Ordering::SeqCst);
+    state.bulk.interval_ms.store(5000, Ordering::SeqCst);
+    *state.bulk.current.write().await = String::new();
+    *state.bulk.last_error.write().await = None;
+    *state.bulk.started_at.write().await = Some(chrono::Utc::now().to_rfc3339());
+    *state.bulk.finished_at.write().await = None;
+
+    let todo_count = todo.len();
+    let task_state = state.clone();
+    let task_lang = lang.clone();
+    tokio::spawn(async move {
+        let n = task_state.bulk.total.load(Ordering::SeqCst);
+        println!("🏭 [BULK] starting run: {} problems, lang={}", n, task_lang);
+
+        for id in todo {
+            if task_state.bulk.stop_flag.load(Ordering::SeqCst) {
+                println!("🏭 [BULK] stop requested — finishing");
+                break;
+            }
+            *task_state.bulk.current.write().await = id.clone();
+
+            let mut interval_ms = task_state.bulk.interval_ms.load(Ordering::SeqCst) as u64;
+
+            // 1. Fetch problem
+            let problem = match task_state.leetcode.fetch_problem_by_slug_or_id(&id).await {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = task_state.db.save_submission(&SubmissionRecord {
+                        id: None,
+                        date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+                        problem_id: Some(id.clone()),
+                        problem_title: None,
+                        difficulty: None,
+                        status: "Failed".to_string(),
+                        submission_id: None,
+                        runtime: None,
+                        memory: None,
+                        execution_time: 0,
+                        language: Some(task_lang.clone()),
+                        code: None,
+                        error: Some(e.clone()),
+                        created_at: None,
+                    });
+                    *task_state.bulk.last_error.write().await = Some(format!("#{}: {}", id, e));
+                    task_state.bulk.done.fetch_add(1, Ordering::SeqCst);
+                    task_state.bulk.failed.fetch_add(1, Ordering::SeqCst);
+                    continue;
+                }
+            };
+
+            // 2. Fetch solution
+            let solution = match task_state.solution_fetcher
+                .fetch_solution(
+                    &problem.question_frontend_id,
+                    &problem.title,
+                    &problem.title_slug,
+                    &task_lang,
+                )
+                .await
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = task_state.db.save_submission(&SubmissionRecord {
+                        id: None,
+                        date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+                        problem_id: Some(problem.question_frontend_id.clone()),
+                        problem_title: Some(problem.title.clone()),
+                        difficulty: Some(problem.difficulty.clone()),
+                        status: "No Solution".to_string(),
+                        submission_id: None,
+                        runtime: None,
+                        memory: None,
+                        execution_time: 0,
+                        language: Some(task_lang.clone()),
+                        code: None,
+                        error: Some(e.clone()),
+                        created_at: None,
+                    });
+                    task_state.bulk.done.fetch_add(1, Ordering::SeqCst);
+                    task_state.bulk.failed.fetch_add(1, Ordering::SeqCst);
+                    continue;
+                }
+            };
+
+            // 3. Submit (if credentials configured)
+            let cfg = task_state.config.read().await.clone();
+            let (status, err) = match (&cfg.leetcode_session, &cfg.csrf_token) {
+                (Some(session), Some(csrf)) if !session.is_empty() && !csrf.is_empty() => {
+                    match task_state.leetcode
+                        .submit_solution(
+                            session,
+                            csrf,
+                            &problem.title_slug,
+                            &problem.question_id,
+                            &solution.language,
+                            &solution.code,
+                        )
+                        .await
+                    {
+                        Ok(res) => (res.status, None),
+                        Err(e) => ("Submission Error".to_string(), Some(e)),
+                    }
+                }
+                _ => (
+                    "Simulated (No Session)".to_string(),
+                    Some("LeetCode session not configured".to_string()),
+                ),
+            };
+
+            let _ = task_state.db.save_submission(&SubmissionRecord {
+                id: None,
+                date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+                problem_id: Some(problem.question_frontend_id.clone()),
+                problem_title: Some(problem.title.clone()),
+                difficulty: Some(problem.difficulty.clone()),
+                status: status.clone(),
+                submission_id: None,
+                runtime: None,
+                memory: None,
+                execution_time: 0,
+                language: Some(solution.language.clone()),
+                code: Some(solution.code.clone()),
+                error: err.clone(),
+                created_at: None,
+            });
+
+            task_state.bulk.done.fetch_add(1, Ordering::SeqCst);
+            if status == "Accepted" {
+                task_state.bulk.accepted.fetch_add(1, Ordering::SeqCst);
+                // gently speed up when clean
+                let cur = task_state.bulk.interval_ms.load(Ordering::SeqCst);
+                let next = ((cur as f64) * 0.94).round() as usize;
+                task_state.bulk.interval_ms.store(next.max(4500), Ordering::SeqCst);
+            } else {
+                task_state.bulk.failed.fetch_add(1, Ordering::SeqCst);
+                if let Some(e) = &err {
+                    *task_state.bulk.last_error.write().await =
+                        Some(format!("#{} {}: {}", problem.question_frontend_id, problem.title, e));
+                    if bulk_rate_limited(e) {
+                        // hard global backoff on 429 / Cloudflare challenges
+                        let cur = task_state.bulk.interval_ms.load(Ordering::SeqCst);
+                        let next = ((cur as f64) * 1.9).round() as usize;
+                        task_state.bulk.interval_ms.store(next.min(90_000), Ordering::SeqCst);
+                    }
+                }
+            }
+
+            interval_ms = task_state.bulk.interval_ms.load(Ordering::SeqCst) as u64;
+            println!(
+                "🏭 [BULK] {}/{} — #{} {} → {} (next in {}ms)",
+                task_state.bulk.done.load(Ordering::SeqCst),
+                n,
+                problem.question_frontend_id,
+                problem.title,
+                status,
+                interval_ms
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
+        }
+
+        *task_state.bulk.finished_at.write().await = Some(chrono::Utc::now().to_rfc3339());
+        task_state.bulk.running.store(false, Ordering::SeqCst);
+        println!(
+            "🏭 [BULK] finished: accepted={} failed={} of {}",
+            task_state.bulk.accepted.load(Ordering::SeqCst),
+            task_state.bulk.failed.load(Ordering::SeqCst),
+            task_state.bulk.total.load(Ordering::SeqCst)
+        );
+    });
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "started": true,
+        "todo": todo_count,
+        "skipped_already_accepted": skipped,
+        "lang": lang,
+        "status_url": "/api/bulk/status"
+    }))).into_response()
+}
+
+pub async fn bulk_status_handler(State(state): State<AppState>) -> impl IntoResponse {
+    Json(serde_json::json!({
+        "running": state.bulk.running.load(Ordering::SeqCst),
+        "stop_requested": state.bulk.stop_flag.load(Ordering::SeqCst),
+        "total": state.bulk.total.load(Ordering::SeqCst),
+        "done": state.bulk.done.load(Ordering::SeqCst),
+        "accepted": state.bulk.accepted.load(Ordering::SeqCst),
+        "failed": state.bulk.failed.load(Ordering::SeqCst),
+        "skipped": state.bulk.skipped.load(Ordering::SeqCst),
+        "interval_ms": state.bulk.interval_ms.load(Ordering::SeqCst),
+        "current": state.bulk.current.read().await.clone(),
+        "last_error": state.bulk.last_error.read().await.clone(),
+        "started_at": state.bulk.started_at.read().await.clone(),
+        "finished_at": state.bulk.finished_at.read().await.clone(),
+    }))
+}
+
+pub async fn bulk_stop_handler(State(state): State<AppState>) -> impl IntoResponse {
+    state.bulk.stop_flag.store(true, Ordering::SeqCst);
+    Json(serde_json::json!({ "stopping": true }))
 }

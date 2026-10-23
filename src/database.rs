@@ -128,6 +128,21 @@ impl Database {
         Ok(results)
     }
 
+    /// Distinct problem ids that already have an Accepted submission.
+    /// Used by the bulk solver to resume without re-submitting.
+    pub fn get_accepted_problem_ids(&self) -> Result<Vec<String>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT problem_id FROM submissions WHERE status = 'Accepted' AND problem_id IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut ids = Vec::new();
+        for r in rows {
+            ids.push(r?);
+        }
+        Ok(ids)
+    }
+
     pub fn get_stats(&self) -> Result<Stats, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let total: i64 = conn.query_row(

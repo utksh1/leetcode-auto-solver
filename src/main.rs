@@ -20,9 +20,10 @@ use tower_http::services::ServeDir;
 use crate::config::AppConfig;
 use crate::database::{Database, SubmissionRecord};
 use crate::handlers::{
-    get_daily_handler, get_history_handler, get_problem_handler, get_session_status_handler,
-    get_stats_handler, get_system_handler, health_handler, preview_solution_handler,
-    save_session_handler, search_problems_handler, solve_handler, test_solution_handler, AppState,
+    bulk_solve_handler, bulk_status_handler, bulk_stop_handler, get_daily_handler,
+    get_history_handler, get_problem_handler, get_session_status_handler, get_stats_handler,
+    get_system_handler, health_handler, preview_solution_handler, save_session_handler,
+    search_problems_handler, solve_handler, test_solution_handler, AppState, BulkState,
 };
 use crate::leetcode::LeetCodeClient;
 use crate::solution::SolutionFetcher;
@@ -134,6 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         leetcode: leetcode.clone(),
         solution_fetcher: solution_fetcher.clone(),
         config: config_arc.clone(),
+        bulk: Arc::new(BulkState::new()),
     };
 
     // Background Cron Scheduler (Daily problem auto-solving)
@@ -226,6 +228,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/session/status", get(get_session_status_handler))
         .route("/api/session", post(save_session_handler))
         .route("/api/system", get(get_system_handler))
+        .route("/api/bulk/solve", post(bulk_solve_handler))
+        .route("/api/bulk/status", get(bulk_status_handler))
+        .route("/api/bulk/stop", post(bulk_stop_handler))
         .route("/favicon.svg", get(static_root_file_handler))
         .route("/icons.svg", get(static_root_file_handler))
         .nest_service("/assets", ServeDir::new("public/assets"))
