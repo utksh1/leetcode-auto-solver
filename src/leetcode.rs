@@ -14,6 +14,10 @@ const USER_AGENT_VAL: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap
 /// retry, every burst got recorded as a permanent "Submission Error".
 const MAX_SUBMIT_RETRIES: u32 = 4;
 
+/// Retries for Cloudflare "Just a moment..." bot-detection challenges (403).
+/// These need longer cool-downs than plain rate limits.
+const MAX_CHALLENGE_RETRIES: u32 = 3;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicTag {
     pub name: String,
@@ -104,12 +108,16 @@ impl LeetCodeClient {
         Self { client }
     }
 
-    /// POST a JSON payload to LeetCode with automatic retry on 429 / 5xx.
+    /// POST a JSON payload to LeetCode with automatic retry on 429 / 5xx /
+    /// Cloudflare challenges.
     ///
-    /// Backoff strategy:
-    /// - honor the `Retry-After` header when LeetCode sends one,
-    /// - otherwise back off linearly: 4s, 7s, 10s, 13s (keeps total worst-case
-    ///   added latency for a doomed request bounded around 34s).
+    /// LeetCode sits behind Cloudflare. Aggressive automated traffic gets:
+    /// - HTTP 429 (rate limit) with an HTML error page,
+    /// - HTTP 403 with a "Just a moment..." bot-detection challenge page.
+    /// Neither means the code was rejected — it means the request never
+    /// reached the judge. We back off (honoring `Retry-After` when present)
+    /// and retry: 4s/7s/10s/13s for 429 & 5xx, and longer 15s/25s/40s for
+    /// Cloudflare challenges.
     async fn post_with_retry(
         &self,
         url: &str,
@@ -129,22 +137,54 @@ impl LeetCodeClient {
                 .map_err(|e| format!("Network error: {}", e))?;
 
             let status = resp.status();
-            let retryable = status.as_u16() == 429 || status.is_server_error();
 
-            if retryable && attempt <= MAX_SUBMIT_RETRIES {
-                let delay = resp
-                    .headers()
-                    .get(reqwest::header::RETRY_AFTER)
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .map(Duration::from_secs)
-                    .unwrap_or_else(|| Duration::from_secs(3 * attempt as u64 + 1));
-                println!(
-                    "⚠️ LeetCode responded {} — retrying in {:?} (attempt {}/{})",
-                    status, delay, attempt, MAX_SUBMIT_RETRIES
-                );
-                sleep(delay).await;
-                continue;
+            // 429 / 5xx: simple retryable statuses, body can stay untouched.
+            if status.as_u16() == 429 || status.is_server_error() {
+                if attempt <= MAX_SUBMIT_RETRIES {
+                    let delay = resp
+                        .headers()
+                        .get(reqwest::header::RETRY_AFTER)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map(Duration::from_secs)
+                        .unwrap_or_else(|| Duration::from_secs(3 * attempt as u64 + 1));
+                    println!(
+                        "⚠️ LeetCode responded {} — retrying in {:?} (attempt {}/{})",
+                        status, delay, attempt, MAX_SUBMIT_RETRIES
+                    );
+                    sleep(delay).await;
+                    continue;
+                }
+                return Ok(resp);
+            }
+
+            // 403: distinguish a Cloudflare challenge page from a real 403.
+            if status.as_u16() == 403 {
+                let hdrs = resp.headers().clone();
+                let bytes = resp.bytes().await.unwrap_or_default();
+                let text = String::from_utf8_lossy(&bytes);
+                let is_challenge = text.contains("Just a moment")
+                    || text.contains("challenge-platform")
+                    || text.contains("cf-chl");
+
+                let rebuilt = {
+                    let mut builder = http::Response::builder().status(status);
+                    for (k, v) in hdrs.iter() {
+                        builder = builder.header(k, v);
+                    }
+                    reqwest::Response::from(builder.body(bytes).map_err(|e| e.to_string())?)
+                };
+
+                if is_challenge && attempt <= MAX_CHALLENGE_RETRIES {
+                    let delay = Duration::from_secs(10 + 8 * attempt as u64);
+                    println!(
+                        "🛡️ Cloudflare challenge (403) — retrying in {:?} (attempt {}/{})",
+                        delay, attempt, MAX_CHALLENGE_RETRIES
+                    );
+                    sleep(delay).await;
+                    continue;
+                }
+                return Ok(rebuilt);
             }
 
             return Ok(resp);
