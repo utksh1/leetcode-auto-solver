@@ -124,9 +124,13 @@ impl SolutionFetcher {
                 if let Ok(resp) = self.client.get(&url).send().await {
                     if resp.status().is_success() {
                         if let Some(markdown) = self.read_capped(resp).await {
-                            if let Some(code) = Self::extract_code_from_markdown(&markdown, target_lang) {
+                            // extract_code_from_markdown may fall back to a
+                            // different language than requested (e.g. a README
+                            // without a Python3 section). Submitting the real
+                            // language avoids "Compile Error" results.
+                            if let Some((code, actual_lang)) = Self::extract_code_from_markdown(&markdown, target_lang) {
                                 return Some(FetchedSolution {
-                                    language: target_lang.to_string(),
+                                    language: actual_lang,
                                     code,
                                     source: url,
                                 });
@@ -149,11 +153,11 @@ impl SolutionFetcher {
         let padded_id = format!("{:04}", frontend_id.parse::<u32>().unwrap_or(0));
         let num = frontend_id.parse::<u32>().unwrap_or(0).to_string();
 
-        let ext = match target_lang.to_lowercase().as_str() {
-            "python" | "python3" | "py" => "py",
-            "java" => "java",
-            "cpp" | "c++" => "cpp",
-            _ => "py",
+        let (ext, lang_slug) = match target_lang.to_lowercase().as_str() {
+            "python" | "python3" | "py" => ("py", "python3"),
+            "java" => ("java", "java"),
+            "cpp" | "c++" => ("cpp", "cpp"),
+            _ => ("py", "python3"),
         };
 
         let urls = [
@@ -168,7 +172,7 @@ impl SolutionFetcher {
                         let cleaned = Self::clean_code(&raw_code, target_lang);
                         if !cleaned.is_empty() {
                             return Some(FetchedSolution {
-                                language: target_lang.to_string(),
+                                language: lang_slug.to_string(),
                                 code: cleaned,
                                 source: url.clone(),
                             });
@@ -181,16 +185,23 @@ impl SolutionFetcher {
         None
     }
 
-    pub fn extract_code_from_markdown(markdown: &str, target_lang: &str) -> Option<String> {
-        let (section_header, lang_tags) = match target_lang.to_lowercase().as_str() {
-            "typescript" | "ts" => ("TypeScript", vec!["typescript", "ts"]),
-            "python" | "python3" | "py" => ("Python3", vec!["python3", "python", "py"]),
-            "rust" | "rs" => ("Rust", vec!["rust", "rs"]),
-            "golang" | "go" => ("Go", vec!["golang", "go"]),
-            "java" => ("Java", vec!["java"]),
-            "cpp" | "c++" => ("C++", vec!["cpp", "c++", "c"]),
-            "javascript" | "js" => ("JavaScript", vec!["javascript", "js"]),
-            _ => ("TypeScript", vec!["typescript", "ts"]),
+    /// Extract solution code from a doocs/leetcode-style README.
+    ///
+    /// Returns `(code, lang_slug)` where `lang_slug` is the LeetCode language
+    /// slug of the block that was actually matched. When the requested language
+    /// has no section, the extractor falls back to TypeScript and then Python3
+    /// — the caller must submit using the returned slug, not the requested
+    /// language, otherwise LeetCode answers with a compile error.
+    pub fn extract_code_from_markdown(markdown: &str, target_lang: &str) -> Option<(String, String)> {
+        let (section_header, lang_tags, lang_slug) = match target_lang.to_lowercase().as_str() {
+            "typescript" | "ts" => ("TypeScript", vec!["typescript", "ts"], "typescript"),
+            "python" | "python3" | "py" => ("Python3", vec!["python3", "python", "py"], "python3"),
+            "rust" | "rs" => ("Rust", vec!["rust", "rs"], "rust"),
+            "golang" | "go" => ("Go", vec!["golang", "go"], "golang"),
+            "java" => ("Java", vec!["java"], "java"),
+            "cpp" | "c++" => ("C++", vec!["cpp", "c++", "c"], "cpp"),
+            "javascript" | "js" => ("JavaScript", vec!["javascript", "js"], "javascript"),
+            _ => ("TypeScript", vec!["typescript", "ts"], "typescript"),
         };
 
         // Try exact section header: #### <Language>\n\n```<tag>\n...\n```
@@ -203,7 +214,7 @@ impl SolutionFetcher {
             if let Ok(re) = Regex::new(&section_pattern) {
                 if let Some(caps) = re.captures(markdown) {
                     if let Some(matched) = caps.get(1) {
-                        return Some(Self::clean_code(matched.as_str(), target_lang));
+                        return Some((Self::clean_code(matched.as_str(), target_lang), lang_slug.to_string()));
                     }
                 }
             }
@@ -215,7 +226,7 @@ impl SolutionFetcher {
             if let Ok(re) = Regex::new(&codeblock_pattern) {
                 if let Some(caps) = re.captures(markdown) {
                     if let Some(matched) = caps.get(1) {
-                        return Some(Self::clean_code(matched.as_str(), target_lang));
+                        return Some((Self::clean_code(matched.as_str(), target_lang), lang_slug.to_string()));
                     }
                 }
             }

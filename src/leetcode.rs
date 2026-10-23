@@ -7,6 +7,13 @@ const LEETCODE_URL: &str = "https://leetcode.com";
 const GRAPHQL_URL: &str = "https://leetcode.com/graphql";
 const USER_AGENT_VAL: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
+/// How many times a rate-limited (429) or server-error (5xx) POST to LeetCode
+/// is retried with exponential backoff before giving up. LeetCode aggressively
+/// rate-limits automated submissions — a burst can return HTTP 429 with an HTML
+/// error page even though the code was never evaluated. Without backoff and
+/// retry, every burst got recorded as a permanent "Submission Error".
+const MAX_SUBMIT_RETRIES: u32 = 4;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicTag {
     pub name: String,
@@ -95,6 +102,53 @@ impl LeetCodeClient {
             .build()
             .unwrap_or_default();
         Self { client }
+    }
+
+    /// POST a JSON payload to LeetCode with automatic retry on 429 / 5xx.
+    ///
+    /// Backoff strategy:
+    /// - honor the `Retry-After` header when LeetCode sends one,
+    /// - otherwise back off linearly: 4s, 7s, 10s, 13s (keeps total worst-case
+    ///   added latency for a doomed request bounded around 34s).
+    async fn post_with_retry(
+        &self,
+        url: &str,
+        headers: &HeaderMap,
+        payload: &serde_json::Value,
+    ) -> Result<reqwest::Response, String> {
+        let mut attempt: u32 = 0;
+        loop {
+            attempt += 1;
+            let resp = self
+                .client
+                .post(url)
+                .headers(headers.clone())
+                .json(payload)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+
+            let status = resp.status();
+            let retryable = status.as_u16() == 429 || status.is_server_error();
+
+            if retryable && attempt <= MAX_SUBMIT_RETRIES {
+                let delay = resp
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(Duration::from_secs)
+                    .unwrap_or_else(|| Duration::from_secs(3 * attempt as u64 + 1));
+                println!(
+                    "⚠️ LeetCode responded {} — retrying in {:?} (attempt {}/{})",
+                    status, delay, attempt, MAX_SUBMIT_RETRIES
+                );
+                sleep(delay).await;
+                continue;
+            }
+
+            return Ok(resp);
+        }
     }
 
     pub async fn fetch_daily_problem(&self) -> Result<LeetCodeProblem, String> {
@@ -363,12 +417,9 @@ impl LeetCodeClient {
         headers.insert(ORIGIN, HeaderValue::from_static(LEETCODE_URL));
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VAL));
 
-        let submit_resp = self.client.post(&submit_url)
-            .headers(headers)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| format!("Submission network error: {}", e))?;
+        // Retries 429 / 5xx with exponential backoff instead of failing the
+        // whole submission on the first rate-limit hit.
+        let submit_resp = self.post_with_retry(&submit_url, &headers, &payload).await?;
 
         if !submit_resp.status().is_success() {
             let status = submit_resp.status();
@@ -584,12 +635,11 @@ impl LeetCodeClient {
         headers.insert(ORIGIN, HeaderValue::from_static(LEETCODE_URL));
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VAL));
 
-        let resp = self.client.post(&interpret_url)
-            .headers(headers)
-            .json(&serde_json::Value::Object(payload_map))
-            .send()
-            .await
-            .map_err(|e| format!("Test network error: {}", e))?;
+        // Same 429 / 5xx backoff as submissions — testcase runs are
+        // rate-limited by LeetCode too.
+        let resp = self
+            .post_with_retry(&interpret_url, &headers, &serde_json::Value::Object(payload_map))
+            .await?;
 
         if !resp.status().is_success() {
             let status = resp.status();
